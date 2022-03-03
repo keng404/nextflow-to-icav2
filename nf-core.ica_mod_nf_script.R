@@ -4,6 +4,9 @@ config_file = "/Users/keng/nf-core/sarek/nextflow.config"
 config_dat  = read.delim(config_file)
 parameters_xml  = NULL
 configs_to_ignore = c("/Users/keng/nf-core/sarek/conf/genomes.config")
+###########
+ica_instance_namespace = "scheduler.illumina.com/presetSize"
+default_instance = "himem-small"
 ######### NEED to add collection of process labels --- will help with update of 
 ########## corresponding functions
 ########## these labels will contain metadata for cpu/memory, error retry strategy,
@@ -766,10 +769,24 @@ print(nf_process_metadata)
 ### add DSL2 support for this process, adding different process metadata for ICA to 
 ### properly handle these workflows
 
-getDefaultContainer <- function(){
-  
+getDefaultContainer <- function(config_file){
+  defaultContainer = "null"
+  config_dat = read.delim(config_file)
+  for(l in 1:nrow(config_dat)){
+    if(grepl("process.container",config_dat[l,]) && grepl("\\=",config_dat[l,])){
+      line_split = strsplit(config_dat[l,],"\\s+")[[1]]
+      clean_line = line_split
+      for(j in 1:length(line_split)){
+        clean_line[j] = trimws(line_split[j])
+      }
+      clean_line = clean_line[clean_line!=""]
+      defaultContainer = clean_line[3]
+    }
+  }
+  return(defaultContainer)
 }
 
+default_container = getDefaultContainer(config_file = config_file)
 ###  need to figure out how to keep proper indentation when modifying a process
 STEP3: Add lines for each process that:
   1) defines an instance-type --- use the Illumina GitBook for this  and  the configs to determine the appropriate cpu/ram settings 
