@@ -13,8 +13,8 @@
  		- make sure to track and properly edit multiple NF scripts that get referenced
 
 # DEVOPS TODO LIST:
-- *install_packages.R* script that defines libraries to install
-- test script to perform dummy ```nextflow run``` command
-- script containing CLI commands to create NF workflows in an ICA domain --- you must be logged in
-- demo/test ontaining CLI commands to stage data for testing out these workflows
-- script containing CLI commands to create project analysis runs for these workflows
+- [ ]  *install_packages.R* script that defines libraries to install
+- [ ]   test script to perform dummy ```nextflow run``` command
+- [ ]   script containing CLI commands to create NF workflows in an ICA domain --- you must be logged in
+- [ ]   demo/test ontaining CLI commands to stage data for testing out these workflows
+- [ ]   script containing CLI commands to create project analysis runs for these workflows
