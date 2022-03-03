@@ -18,3 +18,4 @@
 - [ ]   script containing CLI commands to create NF workflows in an ICA domain --- you must be logged in
 - [ ]   demo/test ontaining CLI commands to stage data for testing out these workflows
 - [ ]   script containing CLI commands to create project analysis runs for these workflows
+- [ ] 	Docker image that contains all the scripts, binaries, and libraries ready for all users to use thes scripts without having to worry about any setup
