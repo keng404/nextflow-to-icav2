@@ -1,13 +1,47 @@
+suppressPackageStartupMessages(library("argparse"))
+
+# create parser object
+parser <- ArgumentParser()
+
+# specify our desired options 
+# by default ArgumentParser will add an help option 
+
+parser$add_argument("-s", "--nf-script","--nf_script", default=NULL, required=TRUE,
+                    help="Main NF script")
+parser$add_argument("-c","--config-file","--config_file", default=NULL,required=TRUE,
+                    help = "main config file")
+parser$add_argument("-x","--parameters-xml","--parameters_xml",
+                    default=NULL, help = " parameters XML file output")
+parser$add_argument("-g","--generate-parameters-xml","--generate_parameters_xml",
+                    action="store_true",default=FALSE, help = "Generate parameters XML file")
+parser$add_argument("-i","--configs_to_ignore", default=c(""),
+                    action="append",help="config files to ignore")
+parser$add_argument("-u","--instance-type-url","--instance_type_url", default="https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types",
+                    help = "URL that contains ICA instance type table")
+parser$add_argument("-d","--default-instance","--default_instance", default = "himem-small",
+                    help = "default instance value")
+parser$add_argument("-n","--ica-instance-namespace","--ica_instance_namespace", default="scheduler.illumina.com/presetSize",
+                    help = "ICA instance type namespace : will allow ICA scheduler to know  what instances to use")
+# get command line options, if help option encountered print help and exit,
+# otherwise if options not found on command line then set defaults, 
+args <- parser$parse_args()
 library(rlog)
 library(stringr)
-config_file = "/Users/keng/nf-core/sarek/nextflow.config"
-config_dat  = read.delim(config_file)
-parameters_xml  = NULL
-configs_to_ignore = c("/Users/keng/nf-core/sarek/conf/genomes.config")
+
+nf_script = args$nf_script
+config_file = args$config_file
+config_dat  = read.delim(config_file,quote="",header=F)
+parameters_xml  = args$parameters_xml
+configs_to_ignore = args$configs_to_ignore
+configs_to_ignore = configs_to_ignore[configs_to_ignore!=""]
+generate_parameters_xml = args$generate_parameters_xml
+if(!is.null(parameter_xml)){
+  generate_parameters_xml = TRUE
+}
 ###########
-ica_instance_namespace = "scheduler.illumina.com/presetSize"
-default_instance = "himem-small"
-instance_type_table_url = "https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types"
+ica_instance_namespace = args$ica_instance_namespace
+default_instance = args$default_instance
+instance_type_table_url = args$instance_type_url
 ######### NEED to add collection of process labels --- will help with update of 
 ########## corresponding functions
 ########## these labels will contain metadata for cpu/memory, error retry strategy,
@@ -126,7 +160,8 @@ getParamsFromConfig <- function(conf_data){
     for(j in 1:length(lines_to_keep)){
       line_parsed = strsplit(lines_to_keep[j],"\\s+")[[1]]
       line_parsed = line_parsed[line_parsed != ""]
-      params[[paste("params.",line_parsed[1],sep="")]] = gsub("\'","",line_parsed[3])
+      params[[paste("params.",line_parsed[1],sep="")]] = line_parsed[3]
+      # params[[paste("params.",line_parsed[1],sep="")]] = gsub("\'","",line_parsed[3])
     }
   }
   return(params)
@@ -141,7 +176,7 @@ paramsFiller <- function(list_to_fill,params_list){
     # maybe try a while loop?
     if(!is.na(result)){
       # fill in appropriate params vaiue
-      updated_value = gsub(result,params_list[[result]],list_to_fill[i])
+      updated_value = gsub(result,gsub("'","",params_list[[result]]),list_to_fill[i])
       # remove ${ and } from original string
       updated_value = gsub("\\$\\{","",updated_value)
       updated_value = gsub("\\}","",updated_value)
@@ -200,7 +235,7 @@ for(config_idx in 1:length(final_config_list)){
   key_name = strsplit(basename(final_config_list[config_idx]),"\\.")[[1]][1]
   current_file = final_config_list[config_idx]
   rlog::log_info(paste("Reading in",current_file))
-  parsedParams  = getParamsFromConfig(conf_data=read.delim(current_file))
+  parsedParams  = getParamsFromConfig(conf_data=read.delim(current_file,header=F))
   if(length(parsedParams) > 0) {
     paramCollection[[key_name]] = parsedParams
   }
@@ -233,7 +268,7 @@ y = compareConfigs(defaultConfig = z,otherConfigs = paramCollection)
 ### for DSL=2 NF scripts ... will need to look through other scripts
 # check that param does not exist in main.nf
 parse_nf_script <- function(nf_script){
-  nf_lines = read.delim(nf_script)
+  nf_lines = read.delim(nf_script,quote="",header=F)
   lines_of_interest = c()
   line_numbers = c()
   in_process_enclosure = FALSE
@@ -261,7 +296,8 @@ parse_nf_script <- function(nf_script){
   param_list = c()
   for(j in 1:length(lines_of_interest)){
     tokenize_line = strsplit(lines_of_interest[j],"\\s+")[[1]]
-    for(k in 1:length(tokenize_line)){
+    for(k in 1:1){
+   # for(k in 1:length(tokenize_line)){
       sanitized_token = trimws(tokenize_line[k])
       if(grepl("^params\\.",sanitized_token)){
         split_check = strsplit(sanitized_token,"\\.")[[1]]
@@ -271,6 +307,8 @@ parse_nf_script <- function(nf_script){
           if(!grepl("\\{",split_check[l]) && !grepl("\\(",split_check[l]) && !grepl("\\)",split_check[l])){
             punctuation_to_remove = str_extract(split_check[l],"(?![[\\]\\[\\_]])[[:punct:]]")
             punctuation_to_remove = punctuation_to_remove[!is.na(punctuation_to_remove)]
+            punctuation_to_remove = punctuation_to_remove[punctuation_to_remove != "\""]
+            punctuation_to_remove = punctuation_to_remove[punctuation_to_remove != "'"]
             if(length(punctuation_to_remove) >0){
               for(pidx in 1:length(punctuation_to_remove)){
                 rlog::log_info(paste("REMOVING_PUNCTUATION:",punctuation_to_remove[pidx], "from",split_check[l]))
@@ -291,8 +329,9 @@ parse_nf_script <- function(nf_script){
   results[["params_found"]] = unique(param_list)
   return(results)
 }
-foi = "/Users/keng/nf-core/sarek/main.nf"
-foi_result = parse_nf_script(nf_script =foi)
+#nf_script = "/Users/keng/nf-core/sarek/main.nf"
+nf_script_dat = read.delim(nf_script,quote="",header=F)
+foi_result = parse_nf_script(nf_script =nf_script)
 all_nf_edits = list()
 ##### STEP0: params then proess until we reach end of NF script
 #### STEP1: compare foi_result[["params_found"]] with y ??? 
@@ -364,6 +403,8 @@ for( i in 1:length(params_to_add_to_nf_script)){
   }
 }
 ##############
+
+### fix bug parameter_edits and y is not equivalent
 ##################
 complex_params_added = c()
 for(i in 1:length(names(parameter_edits))){
@@ -419,7 +460,68 @@ for(i in 1:length(names(parameter_edits))){
     new_name = gsub("params\\.","",new_name)
   }
   expressions_to_add = c()
-  expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+  if(grepl("false",y[[names(parameter_edits)[i]]])){
+    y[[names(parameter_edits)[i]]] = gsub("\"","",y[[names(parameter_edits)[i]]])
+  }
+  logical_values = y[[names(parameter_edits)[i]]] != "null" && y[[names(parameter_edits)[i]]] != "true" && y[[names(parameter_edits)[i]]] != "false"
+  other_conditions = grepl("/",y[[names(parameter_edits)[i]]])  
+  must_have_condition = !grepl("'",y[[names(parameter_edits)[i]]])  
+  dangling_single_quote  =str_extract_all(y[[names(parameter_edits)[i]]],"\"")[[1]]
+  dangling_double_quote  =str_extract_all(y[[names(parameter_edits)[i]]],"'")[[1]]
+  if(must_have_condition && (logical_values || other_conditions)){
+    if(!grepl("/",y[[names(parameter_edits)[i]]])){
+      if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else if(length(dangling_single_quote) > 0 && length(dangling_single_quote) < 2){
+        rlog::log_warn(paste("Working with",y[[names(parameter_edits)[i]]]))
+        y[[names(parameter_edits)[i]]] = gsub("\"","",y[[names(parameter_edits)[i]]])
+        expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"'",sep=""))
+      } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
+        y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
+        expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
+      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+      } else{
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      }
+    } else{
+      if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else if(length(dangling_single_quote) > 0 && length(dangling_single_quote) < 2){
+        rlog::log_warn(paste("Working with",y[[names(parameter_edits)[i]]]))
+        y[[names(parameter_edits)[i]]] = gsub("\"","",y[[names(parameter_edits)[i]]])
+        expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"'",sep=""))
+      } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
+        y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
+        expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
+      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+      } else{
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      }
+    }
+  } else{
+    if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
+      expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+    } else if(length(dangling_single_quote) > 0 && length(dangling_single_quote) < 2){
+      rlog::log_warn(paste("Working with",y[[names(parameter_edits)[i]]]))
+      y[[names(parameter_edits)[i]]] = gsub("\"","",y[[names(parameter_edits)[i]]])
+      expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"'",sep=""))
+    } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
+      y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
+      expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
+    } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+      expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+    } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
+      expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+    } else{
+      expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+    }
+  }
   
   if(!(paste(line_num) %in% names(all_nf_edits))){
     if(length(lines_to_add) > 0) {
@@ -441,6 +543,25 @@ for(i in 1:length(names(parameter_edits))){
     all_nf_edits[[paste(line_num)]] = c(all_nf_edits[[paste(line_num)]],expressions_to_add)
   }
 }
+
+########################
+#### update nf script with parameter updates 
+updated_nf_file = gsub(".nf$",".ica.nf",nf_script)
+new_nf_lines = c()
+rlog::log_info(paste("ADDING UPDATED PARAMS to",updated_nf_file))
+for(i in 1:nrow(nf_script_dat)){
+  if(toString(i) %in% names(all_nf_edits)){
+    new_nf_lines = c(new_nf_lines,nf_script_dat[i,])
+    edits_to_add = all_nf_edits[[toString(i)]]
+    for(j in 1:length(edits_to_add)){
+      new_nf_lines = c(new_nf_lines,edits_to_add[j])
+    }
+  } else{
+    new_nf_lines = c(new_nf_lines,nf_script_dat[i,])
+  }
+}
+write.table(x=new_nf_lines,file=updated_nf_file,sep="\n",quote=F,row.names=F,col.names=F)
+  
 ##########################################
 classifyParameters <- function(paramsToXML){
   xmlSections = list()
@@ -454,7 +575,7 @@ classifyParameters <- function(paramsToXML){
     param_final_name = gsub("params\\.","",param_name)
     if(grepl("\\$\\{",param_value)){
       #rlog::log_info(paste("LOOKING up",param_name))
-      param_value = paramsFiller(c(param_value),y)[1]
+      param_value = paramsFiller(list_to_fill=c(param_value),y)[1]
       #rlog::log_info(paste("VALUE is",param_value))
     }
     parameter_type = 'string'
@@ -477,11 +598,19 @@ classifyParameters <- function(paramsToXML){
         if(grepl("dir",param_name,ignore.case = TRUE)){
           data_type = "FOLDER"
         }
-        if(!(grepl("\\[",param_name)) && !(grepl("\\$\\{",paramsToXML[[param_name]]))){
+        if(!grepl("*",param_value) && !grepl("\\{",param_value) && !(grepl("\\[",param_name)) && !(grepl("\\$\\{",paramsToXML[[param_name]]))){
           rlog::log_info(paste("ADDING",param_name,"to dataInputs"))
           description = paste("Path",parameter_type,"that defines",data_type,param_name)
           parameter_metadata[["description"]] = description
           xmlSections[["dataInputs"]][[param_final_name]] = parameter_metadata
+        } else{
+          rlog::log_info(paste("ADDING",param_name,"to parameterSettings"))
+          description = paste(parameter_type,"that defines",data_type,param_name)
+          parameter_metadata[["description"]] = description
+          parameter_metadata[["type"]] = parameter_type
+          if(param_name != "params.help"){
+            xmlSections[["parameterSettings"]][["general"]][[param_final_name]] = parameter_metadata
+          }
         }
       }
       # all others will be put in options
@@ -530,19 +659,19 @@ classifyParameters <- function(paramsToXML){
 #################
 ### double-check or regenerate XML file ... which behavior to choose?
 
-parameters_xml = NULL
-generate_parameters_xml = TRUE
+#parameters_xml = NULL
+#generate_parameters_xml = TRUE
 if(generate_parameters_xml){
   library(XML)
   getXMLSections = classifyParameters(paramsToXML = y)
   data_input_configurations = getXMLSections[["dataInputs"]]
   step_configurations = getXMLSections[["parameterSettings"]]
-  rlog::log_info(paste("STEP3:Generating ICA XML based off of",foi))
+  rlog::log_info(paste("STEP3:Generating ICA XML based off of",nf_script))
   doc = newXMLDoc()
   #root = xmlRoot(doc)                                      # FIND ROOT
   #pipeline_node = newXMLNode("pipeline",parent=root)
   root = newXMLNode("pipeline",doc=doc)
-  xmlAttrs(root) = c(code=paste(basename(dirname(foi)),"pipeline"),version="1.0",xmlns="xsd://www.illumina.com/ica/cp/pipelinedefinition")
+  xmlAttrs(root) = c(code=paste(basename(dirname(nf_script)),"pipeline"),version="1.0",xmlns="xsd://www.illumina.com/ica/cp/pipelinedefinition")
   # add data inputs
   # create new sections for steps
   ## then add options for each section
@@ -627,11 +756,11 @@ if(generate_parameters_xml){
   #print(doc)
   
   # SAVE XML TO FILE
-  outputFile = paste(basename(dirname(foi)), "pipeline","xml",sep=".")
+  outputFile = paste(basename(dirname(nf_script)), "pipeline","xml",sep=".")
   if(!is.null(parameters_xml)){
     outputPath = parameters_xml
   } else{
-    outputPath = paste(dirname(foi),"/",outputFile,sep="")
+    outputPath = paste(dirname(nf_script),"/",outputFile,sep="")
   }
   rlog::log_info(paste("STEP4: Generating parameters XML to",outputPath))
   saveXML(doc, file=outputPath)
@@ -644,7 +773,7 @@ grabProcessMetadataFromConfigs <- function(conf_files,AllParams,default_config){
   processMetadata[["default"]][["errorStrategy"]] = "ignore"
   for(f in 1:length(conf_files)){
     conf_file = conf_files[f]
-    conf_data = read.delim(conf_file)
+    conf_data = read.delim(conf_file,quote="",header=F)
     rlog::log_info(paste("READING IN:",conf_file))
     in_process_closure = FALSE
     out_process_closure = TRUE
@@ -700,7 +829,10 @@ grabProcessMetadataFromConfigs <- function(conf_files,AllParams,default_config){
             for(k in 1:length(names(AllParams))){
               if(!grepl("\\'",names(AllParams)[k])){
                 if(grepl(names(AllParams)[k],line_to_evaluate)){
-                  line_to_evaluate = gsub(names(AllParams)[k],AllParams[[names(AllParams)[k]]],line_to_evaluate)
+                  rlog::log_info(paste("INITIAL_LINE:",line_to_evaluate))
+                  #line_to_evaluate = paramsFiller(list_to_fill =  c(line_to_evaluate),params_list = AllParams)
+                  line_to_evaluate = gsub(names(AllParams)[k],gsub("'","",AllParams[[names(AllParams)[k]]]),line_to_evaluate)
+                  rlog::log_info(paste("TRANSLATED_LINE:",line_to_evaluate))
                 }
               }
             }
@@ -738,7 +870,10 @@ grabProcessMetadataFromConfigs <- function(conf_files,AllParams,default_config){
             for(k in 1:length(names(AllParams))){
               if(!grepl("\\'",names(AllParams)[k])){
                 if(grepl(names(AllParams)[k],line_to_evaluate)){
-                  line_to_evaluate = gsub(names(AllParams)[k],AllParams[[names(AllParams)[k]]],line_to_evaluate)
+                  rlog::log_info(paste("INITIAL_LINE:",line_to_evaluate))
+                  #line_to_evaluate = paramsFiller(list_to_fill =  c(line_to_evaluate),params_list = AllParams)
+                  line_to_evaluate = gsub(names(AllParams)[k],gsub("'","",AllParams[[names(AllParams)[k]]]),line_to_evaluate)
+                  rlog::log_info(paste("TRANSLATED_LINE:",line_to_evaluate))
                 }
               }
             }
@@ -772,7 +907,7 @@ print(nf_process_metadata)
 
 getDefaultContainer <- function(config_file){
   defaultContainer = "null"
-  config_dat = read.delim(config_file)
+  config_dat = read.delim(config_file,quote="",header=F)
   for(l in 1:nrow(config_dat)){
     if(grepl("process.container",config_dat[l,]) && grepl("\\=",config_dat[l,])){
       line_split = strsplit(config_dat[l,],"\\s+")[[1]]
@@ -870,13 +1005,12 @@ getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table)
   }
 }
 ######################################
-foi = "/Users/keng/nf-core/sarek/main.nf"
-test_foi = "/Users/keng/test.nf"
 parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default_container,ica_instance_table){
   nf_script_process_lines = list()
   dsl2_enabled = FALSE
   in_process = FALSE
   out_process = TRUE
+  process_has_input = FALSE
   process_is_labeled = FALSE 
   process_label = "default"
   process_name = NULL
@@ -888,7 +1022,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
   # include { UntarVegaReference } from './tools-vega.nf'
   skip_line = FALSE ### skip comment lines 
   ### first pass to see if this is a DSL2 script
-  nf_script_dat = read.delim(nf_script,quote = "")
+  nf_script_dat = read.delim(nf_script,quote = "",header=F)
   for(i in 1:nrow(nf_script_dat)){
     skip_line = FALSE
     line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
@@ -922,6 +1056,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
       clean_line[j] = trimws(line_split[j])
     }
     clean_line = clean_line[clean_line!=""]
+    clean_line_length = length(clean_line)
     if(grepl("/",clean_line[1])){
       skip_line = TRUE
     } 
@@ -937,24 +1072,26 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
           nf_script_process_lines[[process_name]] = list()
           process_label = NULL
           container_specified = FALSE
+          process_has_input = FALSE
           process_labels = c()
-          line_numbers = c()
+          line_numbers = c(i)
           process_cpus = c()
           process_memory = c()
           process_lines = c()
           process_container = default_container
           in_expression = FALSE
-        } else if(in_process && ( clean_line[length(clean_line)] == "{" || grepl("if",nf_script_dat[i,]) || grepl("else",nf_script_dat[i,]) || grepl("def",nf_script_dat[i,]))){
+        } else if(in_process && (length(clean_line)>1) && ( clean_line[length(clean_line)] == "{" || grepl("if",nf_script_dat[i,]) || grepl("else",nf_script_dat[i,]) || grepl("def",nf_script_dat[i,]))){
           in_expression = TRUE
           rlog::log_info(paste("EXPRESSION_LINE:",nf_script_dat[i,]))
           #process_lines = c(process_lines,nf_script_dat[i,])
-        } else if(in_process && clean_line[1] == "}" && in_expression){
+        } else if(in_process &&  (clean_line[1] == '"""'|| clean_line[1] == "}") && in_expression){
           in_expression = FALSE
           rlog::log_info(paste("EXPRESSION_LINE:",nf_script_dat[i,]))
           #process_lines = c(process_lines,nf_script_dat[i,])
         } else if(in_process && clean_line[1] == "}" && !in_expression){
           rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
           process_lines = c(process_lines,nf_script_dat[i,])
+          rlog::log_info(paste("UPDATING_PROCESS",process_name))
           nf_script_process_lines[[process_name]][["process_lines"]] = process_lines
           nf_script_process_lines[[process_name]][["process_labels"]] = process_labels
           nf_script_process_lines[[process_name]][["line_numbers"]] = line_numbers
@@ -963,6 +1100,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
           in_process = FALSE
           out_process = TRUE
           process_name = NULL
+          process_has_input = FALSE
           process_label = NULL
           container_specified = FALSE
           in_expression = FALSE
@@ -987,6 +1125,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             process_labels = c(process_labels,process_label)
           }
           if(clean_line[1] == "input:"){
+            process_has_input = TRUE
             line_indent = gsub("input:","",nf_script_dat[i,])
             rlog::log_info(paste("LINE_INDENT_FIRST_TOKEN:",line_indent))
             ############
@@ -1010,7 +1149,13 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
                   if(process_labels[pl] %in% names(nf_process_metadata)){
                     if("container" %in% names(nf_process_metadata[[process_labels[pl]]])){
                       rlog::log_info(paste("ADDING container line:",nf_process_metadata[[process_labels[pl]]][["container"]]))
-                      process_lines = c(process_lines,nf_process_metadata[[process_labels[pl]]][["container"]])
+                      if(grepl("\\:",nf_process_metadata[[process_labels[pl]]][["container"]])){
+                        container_selection_split = strsplit(nf_process_metadata[[process_labels[pl]]][["container"]],"\\s+")[[1]]
+                        container_string = paste(line_indent,"container ",paste("'",gsub("\"","",container_selection_split[length(container_selection_split)]),"'",sep=""),sep="")
+                        process_lines = c(process_lines,container_string)
+                      } else{
+                        process_lines = c(process_lines,nf_process_metadata[[process_labels[pl]]][["container"]])
+                      }
                       container_specified = TRUE
                       break
                     }
@@ -1022,7 +1167,13 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
                 if(process_name_metadata_exist){
                   if("container" %in% names(nf_process_metadata[[process_name]])){
                     rlog::log_info(paste("ADDING container line:",nf_process_metadata[[process_name]][["container"]]))
-                    process_lines = c(process_lines,nf_process_metadata[[process_name]][["container"]])
+                    if(grepl("\\:",nf_process_metadata[[process_name]][["container"]])){
+                      container_selection_split = strsplit(nf_process_metadata[[process_name]][["container"]],"\\s+")[[1]]
+                      container_string = paste(line_indent,"container ",paste("'",gsub("\"","",container_selection_split[length(container_selection_split)]),"'",sep=""),sep="")
+                      process_lines = c(process_lines,container_string)
+                    } else{
+                      process_lines = c(process_lines,nf_process_metadata[[process_name]][["container"]])
+                    }
                     container_specified = TRUE
                   }
                 }
@@ -1069,11 +1220,114 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             process_pod_annotation = getInstancePodAnnotation(cpus = process_cpus,mem = process_memory,container_name = process_container,ica_instance_table = ica_instance_table)
             rlog::log_info(paste("ADDING_POD_ANNOTATION:",process_pod_annotation))
             process_lines = c(process_lines,paste(line_indent,process_pod_annotation,sep=""))
-            rlog::log_info(paste("ADDING_LEINENT_ERROR_STRATEGY:"))
-            process_lines = c(process_lines,paste(line_indent,"errorStrategy: ignore",sep=""))
+            rlog::log_info(paste("ADDING_LEINENT_ERROR_STRATEGY:",paste("errorStrategy 'ignore'",sep="")))
+            process_lines = c(process_lines,paste(line_indent,"errorStrategy 'ignore'",sep=""))
+            rlog::log_info(paste("ADDING_TIME_COMPONENT:",paste("time","'1day'")))
+            process_lines = c(process_lines,paste(line_indent,paste("time","'1day'"),sep=""))
             rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
             process_lines = c(process_lines,nf_script_dat[i,])
-          } else if(clean_line[1] == "cpus"){
+          } else if(clean_line[1] == "output:" && !process_has_input){
+            line_indent = gsub("output:","",nf_script_dat[i,])
+            rlog::log_info(paste("OUTPUT_LINE_INDENT_FIRST_TOKEN:",line_indent))
+            ############
+            process_labels_exist = length(process_labels) > 0 
+            process_labels_metadata_exist = sum(process_labels %in% names(nf_process_metadata)) > 0
+            process_name_metadata_exist = sum(process_name %in% names(nf_process_metadata)) > 0
+            ######################
+            if(process_labels_exist){
+              if(!(process_label %in% names(nf_process_metadata))){
+                rlog::log_warn(paste("NO_PROCESS_LABEL:","For process name:",process_name))
+              }
+            } else{
+              rlog::log_warn(paste("NO_PROCESS_LABEL:","For process name:",process_name))
+            }
+            rlog::log_info(paste("FOUND_PROCESS_LABEL:",paste(process_labels,collapse=",")))
+            #### adding container
+            if(!container_specified){
+              ### check if process label identifies container
+              if(process_labels_exist && process_labels_metadata_exist){
+                for(pl in 1:length(process_labels)){
+                  if(process_labels[pl] %in% names(nf_process_metadata)){
+                    if("container" %in% names(nf_process_metadata[[process_labels[pl]]])){
+                      rlog::log_info(paste("ADDING container line:",nf_process_metadata[[process_labels[pl]]][["container"]]))
+                      if(grepl("\\:",nf_process_metadata[[process_labels[pl]]][["container"]])){
+                        container_selection_split = strsplit(nf_process_metadata[[process_labels[pl]]][["container"]],"\\s+")[[1]]
+                        container_string = paste(line_indent,"container ",paste("'",gsub("\"","",container_selection_split[length(container_selection_split)]),"'",sep=""),sep="")
+                        process_lines = c(process_lines,container_string)
+                      } else{
+                        process_lines = c(process_lines,nf_process_metadata[[process_labels[pl]]][["container"]])
+                      }
+                      container_specified = TRUE
+                      break
+                    }
+                  }
+                }
+              }
+              ### check if process name identifies container
+              if(!container_specified){
+                if(process_name_metadata_exist){
+                  if("container" %in% names(nf_process_metadata[[process_name]])){
+                    rlog::log_info(paste("ADDING container line:",nf_process_metadata[[process_name]][["container"]]))
+                    if(grepl("\\:",nf_process_metadata[[process_name]][["container"]])){
+                      container_selection_split = strsplit(nf_process_metadata[[process_name]][["container"]],"\\s+")[[1]]
+                      container_string = paste(line_indent,"container ",paste("'",gsub("\"","",container_selection_split[length(container_selection_split)]),"'",sep=""),sep="")
+                      process_lines = c(process_lines,container_string)
+                    } else{
+                      process_lines = c(process_lines,nf_process_metadata[[process_name]][["container"]])
+                    }
+                    container_specified = TRUE
+                  }
+                }
+              }
+              ### add default container
+              if(!container_specified){
+                rlog::log_info(paste("ADDING container line:",paste(line_indent,"container",process_container)))
+                process_lines = c(process_lines,paste(paste(line_indent,"container",sep=""),process_container))
+              }
+              #########
+              if(length(process_cpus) == 0){
+                if(process_labels_exist && process_labels_metadata_exist){
+                  for(pl in 1:length(process_labels)){
+                    if(process_labels[pl] %in% names(nf_process_metadata)){
+                      if("cpus" %in% names(nf_process_metadata[[process_labels[pl]]])){
+                        process_cpus = c(process_cpus,nf_process_metadata[[process_labels[pl]]][["cpus"]])
+                      }
+                    }
+                  }
+                }
+                if(process_name_metadata_exist){
+                  if("cpus" %in% names(nf_process_metadata[[process_name]])){
+                    process_cpus = c(process_cpus,nf_process_metadata[[process_name]][["cpus"]])
+                  }
+                }
+              }
+              if(length(process_memory) == 0){
+                if(process_labels_exist && process_labels_metadata_exist){
+                  for(pl in 1:length(process_labels)){
+                    if(process_labels[pl] %in% names(nf_process_metadata)){
+                      if("mem" %in% names(nf_process_metadata[[process_labels[pl]]])){
+                        process_memory = c(process_memory,nf_process_metadata[[process_labels[pl]]][["mem"]])
+                      }
+                    }
+                  }
+                }
+                if(process_name_metadata_exist){
+                  if("mem" %in% names(nf_process_metadata[[process_name]])){
+                    process_memory = c(process_memory,nf_process_metadata[[process_name]][["mem"]])
+                  }
+                }
+              }
+            }
+            process_pod_annotation = getInstancePodAnnotation(cpus = process_cpus,mem = process_memory,container_name = process_container,ica_instance_table = ica_instance_table)
+            rlog::log_info(paste("ADDING_POD_ANNOTATION:",process_pod_annotation))
+            process_lines = c(process_lines,paste(line_indent,process_pod_annotation,sep=""))
+            rlog::log_info(paste("ADDING_LEINENT_ERROR_STRATEGY:",paste("errorStrategy 'ignore'",sep="")))
+            process_lines = c(process_lines,paste(line_indent,"errorStrategy 'ignore'",sep=""))
+            rlog::log_info(paste("ADDING_TIME_COMPONENT:",paste("time","'1day'")))
+            process_lines = c(process_lines,paste(line_indent,paste("time","'1day'"),sep=""))
+            rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
+            process_lines = c(process_lines,nf_script_dat[i,])
+            } else if(clean_line[1] == "cpus"){
             line_indent = gsub("cpus","",nf_script_dat[i,])
             cpus = stroi(clean_line[2])
             process_cpus = c(process_cpus,cpus)
@@ -1108,11 +1362,11 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
               rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
               process_lines = c(process_lines,nf_script_dat[i,])
             }
-          } else if(clean_line[1] != "errorStrategy" && clean_line[1] != "time" && clean_line[1] != "publishDir"){
+          } else if(clean_line[1] != "queue" && clean_line[1] != "label" && clean_line[1] != "errorStrategy" && clean_line[1] != "time" && clean_line[1] != "publishDir"){
             rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
             process_lines = c(process_lines,nf_script_dat[i,])
           } else{
-            if(clean_line[1] != "queue"){
+            if(clean_line[1] != "queue" && clean_line[1] != "label"){
               rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
               process_lines = c(process_lines,nf_script_dat[i,])
             }
@@ -1131,11 +1385,66 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
   return(nf_script_process_lines)
 }
 
-updated_nf_processes = parseProcessesInNextflowScript(nf_script=foi,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
-print(updated_nf_processes[["MarkDuplicates"]])
-
-### what if process has no input?
+updated_nf_processes = parseProcessesInNextflowScript(nf_script=updated_nf_file,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
+print(updated_nf_processes[["VEP"]])
 
 ############
+## check out the updated processes and the line #s. Keep what isn't a process-line # (i.e. line # defining a process)
+## when you find a process, update it
+
+# get first line # of each process to determine the order in which we'll update our updated_nf_file
+# this will inform us of lines outside the process that we'll want to keep
+process_updated_nf_file = gsub(".nf$",".dev.nf",updated_nf_file)
+key_order = c()
+second_pass_updated_lines = c()
+for(i in 1:length(names(updated_nf_processes))){
+  line_num = min(updated_nf_processes[[names(updated_nf_processes)[i]]][["line_numbers"]])
+  key_order[i] = line_num
+}
+process_order = names(updated_nf_processes)[order(key_order)]
+updated_nf_dat = read.delim(updated_nf_file,quote="",header=F)
+previous_line_count = 0
+for(pidx in 1:length(process_order)){
+  current_process = updated_nf_processes[[process_order[pidx]]]
+  current_process_new_lines = current_process[["process_lines"]]
+  current_process_line_numbers = current_process[["line_numbers"]]
+  if(length(current_process_new_lines) == 0){
+    rlog::log_warn(paste("NO_LINES_FOUND_FOR_PROCESS",process_order[pidx]))
+  }
+  lower_line_count_bound = 0
+  upper_line_count_bound = min(current_process_line_numbers)
+  if(pidx > 1){
+    lower_line_count_bound = max(updated_nf_processes[[process_order[pidx-1]]][["line_numbers"]])
+  }
+  rlog::log_info(paste("LOWER_LINE_BOUND",lower_line_count_bound,"UPPER_LINE_BOUND",upper_line_count_bound))
+  lines_to_add = TRUE
+  for(lidx in 1:nrow(updated_nf_dat)){
+    if(!lines_to_add){
+      break
+    }
+    if(lidx < upper_line_count_bound && lidx > lower_line_count_bound){
+      second_pass_updated_lines = c(second_pass_updated_lines,updated_nf_dat[lidx,])
+    } else if(lidx == min(current_process_line_numbers)){
+        for(k in 1:length(current_process_new_lines)){
+          second_pass_updated_lines = c(second_pass_updated_lines,current_process_new_lines[k])
+        }
+      lines_to_add = FALSE
+    }
+  }
+  current_line_count = length(second_pass_updated_lines)
+  rlog::log_info(paste("ADDED",current_line_count-previous_line_count,"lines from process:",process_order[pidx]))
+  previous_line_count = current_line_count
+}
+##### copy intermediate files
+#### get the rest of the script
+line_count_to_finish = max(current_process_line_numbers) + 1
+if(line_count_to_finish < nrow(updated_nf_dat)){
+  for(lidx in line_count_to_finish:nrow(updated_nf_dat)){
+    second_pass_updated_lines = c(second_pass_updated_lines,updated_nf_dat[lidx,])
+  }
+}
+rlog::log_info(paste("Writing updated processes to",process_updated_nf_file))
+write.table(x=second_pass_updated_lines,file=process_updated_nf_file,sep="\n",quote=F,row.names=F,col.names=F)
+###############
 #STEP4: Check for file_paths based-off the parameter XML file to ensure that they are
 # wrapped by file(myChannel1)
