@@ -13,7 +13,7 @@ parser$add_argument("-o","--output-xml","--output_xml", default=NULL,
 parser$add_argument("-i","--include_hidden_parameters",action="store_true",
                     default=FALSE, help = "include all parameters in XML")
 parser$add_argument("-s","--sections_override", default=c("reference_genome_options"),
-                    help="section in schema JSON file to ensure it's presence in the output XML file")
+                    action="append",help="section in schema JSON file to ensure it's presence in the output XML file")
 # get command line options, if help option encountered print help and exit,
 # otherwise if options not found on command line then set defaults, 
 args <- parser$parse_args()

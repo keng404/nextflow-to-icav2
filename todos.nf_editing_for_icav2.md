@@ -1,10 +1,14 @@
 # IMPLEMENTATION TODO LIST:
-- [ ] 1) properly identify glob expressions or expressions as strings and not paths
+- [X] 1) properly identify glob expressions or expressions as strings and not input paths
 - [ ] 2) relative / absolute file paths in DSL 1 NF scripts
 - [X] 3) get default container
-- [ ] 4) NF script index --- by line
-		- keep original indexes ??
-		- Or update indexes of the script and the indexes edits our script is propoosing
+- [ ] 3a) add dummy process at end of script that:
+      	       	- [ ] copies intermediate results and logs for dev work
+		- [ ] grabs trace logs
+- [X] 4) NF script updates
+      	    	- [X] update params in main script and write updated script
+		- [X] parse processes and propose updates saved in another object
+		- [X] read updated script and whenever there's a process, update this script
 - [ ] 5) parse NFscripts for process enclosures
 		- [X] look for labels, cpu, memory  ( edits where we remove)
 		- [X] add pod anotation, container references when needed (edits where we add)
