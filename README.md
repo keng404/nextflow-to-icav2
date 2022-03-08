@@ -8,7 +8,9 @@ Nextflow workflows on ICAv2 are orchestrated by kubernetes require an XML file
 - processes will need a  ```pod annotation``` specified for ICA to know what instance type to run the process.
   - A table of instance types and the associated CPU + Memory specs can be found [here](https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types)  
 
-These scripts have been made to be compatible with [nf-core](https://github.com/nf-core) workflows 
+These scripts have been made to be compatible with [nf-core](https://github.com/nf-core) workflows
+
+**DSL2 compatibility is still in developement**
 
 # To generate an XML file from nf-core pipeline
 ```bash
@@ -22,9 +24,9 @@ nf-core schema build -d {PATH_NF-CORE_DIR}
 
 # [STILL IN DEVELOPMENT]: To generate an XML file and edits to Nextflow script, use the following template
 ```bash
-Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --xml {PATH}]
+Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH}]
 ```
-Specifying the ```--xml``` parameter tells the ```nf-core.ica_mod_nf_script.R``` to generate an XML files based on the NF script and config you specify.
+Specifying the ```--parameters-xml``` parameter tells the ```nf-core.ica_mod_nf_script.R``` to generate an XML files based on the NF script and config you specify.
 Default behavior is to traverse the config file you provide and parse additional config files that might be referenced.
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
