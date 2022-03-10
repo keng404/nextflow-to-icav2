@@ -1,4 +1,6 @@
 suppressPackageStartupMessages(library("argparse"))
+library(rlog)
+library(rjson)
 
 # create parser object
 parser <- ArgumentParser()
@@ -12,13 +14,12 @@ parser$add_argument("-o","--output-xml","--output_xml", default=NULL,
                     help = "output file name for parameters XML file")
 parser$add_argument("-i","--include_hidden_parameters",action="store_true",
                     default=FALSE, help = "include all parameters in XML")
-parser$add_argument("-s","--sections_override", default=c("reference_genome_options"),
+parser$add_argument("-s","--sections_override", default=c("input_output_options"),
                     action="append",help="section in schema JSON file to ensure it's presence in the output XML file")
 # get command line options, if help option encountered print help and exit,
 # otherwise if options not found on command line then set defaults, 
 args <- parser$parse_args()
-library(rlog)
-library(rjson)
+
 if(!is.null(args$json)){
   nf_params_json = args$json
 } else{
@@ -29,6 +30,7 @@ rlog::log_info(paste("Step0: Reading in",nf_params_json))
 json_data = fromJSON(file=nf_params_json)$definitions
 generic_data  = fromJSON(file=nf_params_json)$properties
 parameter_sections = names(json_data)
+rlog::log_info(paste("PARAMETER_SECTIONS:",paste(parameter_sections,collapse=", ")))
 #####################
 returnParamMetadata <- function(param_configuration){
   param_metadata = list()
@@ -42,12 +44,24 @@ returnParamMetadata <- function(param_configuration){
   #### help text describing parameter
   description_text = c()
   if("description" %in% names(param_configuration)){
+    param_configuration[["description"]] = paste(strsplit(param_configuration[["description"]],"\n")[[1]],collapse="\n")
+    #param_configuration[["description"]] = gsub("\n","\\n",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub("`","",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub("\\*\\*\\NB\\*\\*","",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub("&","",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub(">","",param_configuration[["description"]])
     description_text = c(description_text,param_configuration[["description"]])
   }
   if("help_text" %in% names(param_configuration)){
+    param_configuration[["help_text"]] = paste(strsplit(param_configuration[["help_text"]],"\n")[[1]],collapse="\n")
+    #param_configuration[["help_text"]] = gsub("\n","\\n",param_configuration[["help_text"]])
+    param_configuration[["help_text"]] = gsub("`","",param_configuration[["help_text"]])
+    param_configuration[["help_text"]] = gsub(">","",param_configuration[["help_text"]])
+    param_configuration[["help_text"]] = gsub("\\*\\*\\NB\\*\\*","",param_configuration[["help_text"]])
+    param_configuration[["help_text"]] = gsub("&","",param_configuration[["help_text"]])
     description_text = c(description_text,param_configuration[["help_text"]])
   }
-  param_metadata[["description"]] = paste(description_text,collapse=".\n")
+  param_metadata[["description"]] = paste(description_text,collapse="\\n")
   ### default value
   if("default" %in% names(param_configuration)){
     param_metadata[["default"]] = param_configuration[["default"]]
@@ -63,6 +77,7 @@ returnParamMetadata <- function(param_configuration){
   return(param_metadata)
 }
 
+rlog::log_info(paste("INCLUDE_HIDDEN_PARAMETERS:",args$include_hidden_parameters))
 getParams <- function(param_data,include_hidden_parameters=args$include_hidden_parameters,override_list = c(),generic_data){
   parameterConfigs = list()
   parameter_sections = names(param_data)
@@ -94,6 +109,7 @@ getParams <- function(param_data,include_hidden_parameters=args$include_hidden_p
   }
   ### 1st attempt to include parameters from NF pipelines not in nf-core
   if(isTRUE(include_hidden_parameters)){
+    rlog::log_info("ADDING_HIDDEN_PARAMETERS")
     param_names = names(generic_data)
     genericParams = list()
     if(!is.null(param_names)){
@@ -109,7 +125,7 @@ getParams <- function(param_data,include_hidden_parameters=args$include_hidden_p
   return(parameterConfigs)
 }
 rlog::log_info(paste("Step1: Parsing",nf_params_json))
-x = getParams(json_data,override_list = c("reference_genome_options"),generic_data =generic_data)
+x = getParams(json_data,override_list = args$sections_override,generic_data =generic_data)
 
 
 ### Using the XML package, consider adding nodes to the prefix.xml using newXMLNode():
@@ -123,7 +139,7 @@ retrieveDataInput <- function(param_configuration){
   dataInputs = list()
   param_names = names(param_configuration)
   for(i in 1:length(param_names)){
-    if(grepl("Path",param_configuration[[param_names[i]]][["description"]])){
+    if(grepl("Path",param_configuration[[param_names[i]]][["description"]],ignore.case=T)){
       is_data_input = c(is_data_input,param_names[i])
     }
   }
@@ -164,18 +180,16 @@ y = convertParams(x)
 data_input_configurations = y[["dataInputs"]]
 step_configurations = y[["steps"]]
 # XML STRING 
-prefix.xml <- "<pipeline code=\"\" version=\"1.0\" xmlns=\"xsd://www.illumina.com/ica/cp/pipelinedefinition\">
-    <dataInputs>
-    </dataInputs>
-    <steps>
-    </steps>
-</pipeline>"
+prefix.xml <- "
+<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+"
 
 
 # BUILD XML TREE
 #doc = xmlTreeParse(prefix.xml,useInternalNodes = T)     # PARSE STRING
 rlog::log_info(paste("STEP3:Generating ICA XML based off of",nf_params_json))
 doc = newXMLDoc()
+#xmlAttrs(doc) = c(encoding="UTF-8",standalone="yes")
 #root = xmlRoot(doc)                                      # FIND ROOT
 #pipeline_node = newXMLNode("pipeline",parent=root)
 root = newXMLNode("pipeline",doc=doc)
@@ -194,9 +208,9 @@ xmlAttrs(root) = c(code=paste(basename(dirname(nf_params_json)),"pipeline"),vers
 #### add data inputs
 rlog::log_info(paste("STEP3a: Adding dataInputs"))
 dataInputsNode = newXMLNode("dataInputs",parent=root)
-dataInputNode = newXMLNode("dataInput",parent=dataInputsNode)
 if(length(data_input_configurations) >0){
   for(i in 1:length(names(data_input_configurations))){
+    dataInputNode = newXMLNode("dataInput",parent=dataInputsNode)
     if(grepl("folder",data_input_configurations[[names(data_input_configurations)[i]]][["description"]],ignore.case=T)){
       xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FOLDER",required = "true",multiValue = "true")   
   } else{
@@ -206,7 +220,7 @@ if(length(data_input_configurations) >0){
     newXMLNode("description", data_input_configurations[[names(data_input_configurations)[i]]][["description"]], parent=dataInputNode)
   }
 } else{
-  rlog::log_info(paste("STEP3a: No dataInputs found"))
+  rlog::log_warn(paste("STEP3a: No dataInputs found"))
 }
 ############## add parameter options
 ## <pd:step execution="MANDATORY" code="General">
@@ -253,12 +267,20 @@ if(length(step_configurations)>0){
       if("default" %in% names(parameter_metadata)){
         newXMLNode("value",parameter_metadata[["default"]],parent=nested_parameter_node)
       } else{
-        newXMLNode("value",parent=nested_parameter_node)
+        dummy_value = ""
+        if(parameter_metadata[["type"]] == "boolean"){
+          dummy_value = "false"
+        } else if(grepl("number",parameter_metadata[["type"]],ignore.case = T)){
+          dummy_value = 0
+        } else{
+          dummy_value = "null"
+        }
+        newXMLNode("value",dummy_value,parent=nested_parameter_node)
       }
     }
   }
 } else{
-  rlog::log_info(paste("STEP3a: No parameters found"))
+  rlog::log_warn(paste("STEP3a: No parameters found"))
 }
 # VIEW XML
 #print(doc)
@@ -271,4 +293,5 @@ if(!is.null(args$output)){
   outputPath = paste(dirname(nf_params_json),"/",outputFile,sep="")
 }
 rlog::log_info(paste("STEP4: Generating parameters XML to",outputPath))
-saveXML(doc, file=outputPath)
+#prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+saveXML(doc, file=outputPath,encoding="utf-8")
