@@ -1,5 +1,6 @@
 suppressPackageStartupMessages(library("argparse"))
-
+library(rlog)
+library(stringr)
 # create parser object
 parser <- ArgumentParser()
 
@@ -14,7 +15,7 @@ parser$add_argument("-x","--parameters-xml","--parameters_xml",
                     default=NULL, help = " parameters XML file output")
 parser$add_argument("-g","--generate-parameters-xml","--generate_parameters_xml",
                     action="store_true",default=FALSE, help = "Generate parameters XML file")
-parser$add_argument("-i","--configs_to_ignore", default=c(""),
+parser$add_argument("-i","--configs-to-ignore","--configs_to_ignore", default=c(""),nargs="?",
                     action="append",help="config files to ignore")
 parser$add_argument("-u","--instance-type-url","--instance_type_url", default="https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types",
                     help = "URL that contains ICA instance type table")
@@ -25,8 +26,7 @@ parser$add_argument("-n","--ica-instance-namespace","--ica_instance_namespace", 
 # get command line options, if help option encountered print help and exit,
 # otherwise if options not found on command line then set defaults, 
 args <- parser$parse_args()
-library(rlog)
-library(stringr)
+
 
 nf_script = args$nf_script
 config_file = args$config_file
@@ -35,7 +35,7 @@ parameters_xml  = args$parameters_xml
 configs_to_ignore = args$configs_to_ignore
 configs_to_ignore = configs_to_ignore[configs_to_ignore!=""]
 generate_parameters_xml = args$generate_parameters_xml
-if(!is.null(parameter_xml)){
+if(!is.null(parameters_xml)){
   generate_parameters_xml = TRUE
 }
 ###########
@@ -97,12 +97,12 @@ getParamsFromConfig <- function(conf_data){
       } else{
         rlog::log_info(paste("OTHER_LINE:",conf_data[i,]))
         if(!line_skip && !grepl("params",conf_data[i,])){
-          if(!grepl("\'",conf_data[i,]) && grepl("\\{",conf_data[i,])){
+          if(!grepl("\'",conf_data[i,]) && !grepl("\\$\\{",conf_data[i,]) && grepl("\\{",conf_data[i,])){
             initial_nested_param = strsplit(conf_data[i,],"\\s+")[[1]]
             initial_nested_param = initial_nested_param[initial_nested_param!=""]
             initial_nested_param = initial_nested_param[!grepl("\\{",initial_nested_param)]
           } else{
-            if( grepl("\\{",conf_data[i,])){
+            if( grepl("\\{",conf_data[i,]) && !grepl("\\$\\{",conf_data[i,])){
               nested_param_key = strsplit(conf_data[i,],"\\s+")[[1]]
               nested_param_key = nested_param_key[nested_param_key!=""]
               nested_param_key = nested_param_key[!grepl("\\{",nested_param_key)]
@@ -293,6 +293,7 @@ parse_nf_script <- function(nf_script){
       }
     }
   }
+  if(length(lines_of_interest) >0){
   param_list = c()
   for(j in 1:length(lines_of_interest)){
     tokenize_line = strsplit(lines_of_interest[j],"\\s+")[[1]]
@@ -322,6 +323,9 @@ parse_nf_script <- function(nf_script){
         param_list = c(param_list,double_sanitized_token)
       }
     }
+  }
+  } else{
+    rlog::log_warn(paste("COULD not find param lines for",nf_script))
   }
   results = list()
   results[["lines_kept"]] = lines_of_interest
@@ -358,13 +362,24 @@ for( i in 1:length(params_to_check)){
     param_key_order = c(param_key_order,result)
     if(!is.na(result)){
       param_check = TRUE
+      if(!result %in% names(y)){
+        rlog::log_warn(paste("CANNOT FIND value for parameter",result))
+        rlog::log_warn(paste("WILL NOT check expression",y[[params_to_check[i]]]))
+        param_check = FALSE
+      }
       while(param_check){
-        if(!grepl("\\$\\{",y[[result]])){
+        if(!result %in% names(y)){
+          rlog::log_warn(paste("CANNOT FIND value for parameter",result))
+          rlog::log_warn(paste("WILL NOT check expression",y[[params_to_check[i]]]))
           param_check = FALSE
         } else{
-          result = str_extract(y[[result]], "(?<=\\{)[^\\}]+")
-          if(!result %in% param_key_order){
-            param_key_order = c(param_key_order,result)
+          if(!grepl("\\$\\{",y[[result]])){
+            param_check = FALSE
+          } else{
+            result = str_extract(y[[result]], "(?<=\\{)[^\\}]+")
+            if(!result %in% param_key_order){
+              param_key_order = c(param_key_order,result)
+            }
           }
         }
       }
@@ -403,15 +418,16 @@ for( i in 1:length(params_to_add_to_nf_script)){
   }
 }
 ##############
-
 ### fix bug parameter_edits and y is not equivalent
 ##################
+exceptions_list = c('null','true','false')
 complex_params_added = c()
 for(i in 1:length(names(parameter_edits))){
   line_num = parameter_edits[[names(parameter_edits)[i]]]
   new_name = names(parameter_edits)[i]
   lines_to_add = c()
   if(grepl("\\[",new_name)){
+    rlog::log_info(paste("CHECKING_TO_SEE if upstream param needs to be initialized for",new_name))
     new_name = new_name
     new_name_tokens = strsplit( new_name , "\\.")[[1]]
     new_name_tokens_v2 = c()
@@ -432,25 +448,51 @@ for(i in 1:length(names(parameter_edits))){
         new_name_tokens_v2 = c(new_name_tokens_v2,new_name_tokens[t])
       }
     }
+    rlog::log_info(paste("TOKENS:",paste(new_name_tokens_v2,collapse="---")))
     new_name_tokens = new_name_tokens_v2
     for(n in 1:length(new_name_tokens)){
       #test_split = strsplit(new_name_tokens[n],"[[:punct:]]")[[1]]
       test_split = strsplit(new_name_tokens[n],"\\[|]")[[1]]
       test_split = test_split[test_split!="" && !is.na(test_split)]
+      new_key = str_extract_all(new_name,"(?<=\\[)[^\\]]+")[[1]][1]
       rlog::log_info(paste("MY_SPLIT:",paste(test_split,collapse="---")))
       if(length(test_split) > 1){
         rlog::log_info(paste("INVESTIGATING_PARAM:",new_name))
-        if(!(paste("params.",test_split[1],sep="") %in% complex_params_added)){
-          line_to_add  = paste(paste("params.",test_split[1],sep=""),"=","[:]")
-          rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],sep="")))
-          lines_to_add = c(lines_to_add,line_to_add)
-          complex_params_added = c(complex_params_added,paste("params.",test_split[1],sep=""))
+        if(length(str_extract_all(test_split[1],"'")[[1]]) %% 2 == 0 ){
+          if(!(paste("params.",test_split[1],sep="") %in% complex_params_added)){
+            line_to_add  = paste(paste("params.",test_split[1],sep=""),"=","[:]")
+            rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],sep="")))
+            lines_to_add = c(lines_to_add,line_to_add)
+            complex_params_added = c(complex_params_added,paste("params.",test_split[1],sep=""))
+          } 
+          if(!(paste("params.",test_split[1],"[",new_key,"]",sep="") %in% complex_params_added)){
+            line_to_add  = paste(paste("params.",test_split[1],"[",new_key,"]",sep=""),"=","[:]")
+            lines_to_add = c(lines_to_add,line_to_add)
+            rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],"[",new_key,"]",sep="")))
+            complex_params_added = c(complex_params_added,paste("params.",test_split[1],"[",new_key,"]",sep=""))
+          }
         }
-        if(!(paste("params.",test_split[1],"[",test_split[2],"]",sep="") %in% complex_params_added)){
-          line_to_add  = paste(paste("params.",test_split[1],"[",test_split[2],"]",sep=""),"=","[:]")
-          lines_to_add = c(lines_to_add,line_to_add)
-          rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],"[",test_split[2],"]",sep="")))
-          complex_params_added = c(complex_params_added,paste("params.",test_split[1],"[",test_split[2],"]",sep=""))
+      } else{
+        redo_tokens = strsplit( new_name , "\\.")[[1]]
+        tokens_to_check = redo_tokens[grepl("\\[",redo_tokens)]
+        new_key = str_extract_all(new_name,"(?<=\\[)[^\\]]+")[[1]][1]
+        for(n in 1:length(tokens_to_check)){
+          test_split = strsplit(tokens_to_check[n],"\\[|]")[[1]]
+          rlog::log_info(paste("INVESTIGATING_PARAM:",new_name))
+          if(length(str_extract_all(test_split[1],"'")[[1]]) %% 2 == 0 ){
+            if(!(paste("params.",test_split[1],sep="") %in% complex_params_added)){
+              line_to_add  = paste(paste("params.",test_split[1],sep=""),"=","[:]")
+              rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],sep="")))
+              lines_to_add = c(lines_to_add,line_to_add)
+              complex_params_added = c(complex_params_added,paste("params.",test_split[1],sep=""))
+            }
+            if(!(paste("params.",test_split[1],"[",new_key,"]",sep="") %in% complex_params_added)){
+              line_to_add  = paste(paste("params.",test_split[1],"[",new_key,"]",sep=""),"=","[:]")
+              lines_to_add = c(lines_to_add,line_to_add)
+              rlog::log_info(paste("Initializing complex param:",paste("params.",test_split[1],"[",new_key,"]",sep="")))
+              complex_params_added = c(complex_params_added,paste("params.",test_split[1],"[",new_key,"]",sep=""))
+            }
+          }
         }
       }
       
@@ -479,15 +521,20 @@ for(i in 1:length(names(parameter_edits))){
       } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
         y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
         expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
-      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+      } else if(y[[names(parameter_edits)[i]]]  %in% exceptions_list){
         expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
-      } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
+      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+        if(is.numeric(y[[names(parameter_edits)[i]]])){
+            expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+        } else{
+          expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+        }
+      } else if(!grepl("\"",y[[names(parameter_edits)[i]]]) ){
         expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
       } else{
-        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+         expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
       }
-    } else{
-      if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
+    } else if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
         expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
       } else if(length(dangling_single_quote) > 0 && length(dangling_single_quote) < 2){
         rlog::log_warn(paste("Working with",y[[names(parameter_edits)[i]]]))
@@ -496,14 +543,23 @@ for(i in 1:length(names(parameter_edits))){
       } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
         y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
         expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
-      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+      } else if(y[[names(parameter_edits)[i]]]  %in% exceptions_list){
         expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
-      } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
+      } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+        if(is.numeric(y[[names(parameter_edits)[i]]])){
+          expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+        } else{
+          expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+        }      
+      } else if(!grepl("\"",y[[names(parameter_edits)[i]]]) ){
         expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
       } else{
-        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+        if(is.numeric(y[[names(parameter_edits)[i]]])){
+          expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+        } else{
+          expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+        }
       }
-    }
   } else{
     if((length(dangling_single_quote) == 2  && length(dangling_double_quote) == 0)|| (length(dangling_single_quote) == 0 && length(dangling_double_quote) ==2)){
       expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
@@ -514,15 +570,24 @@ for(i in 1:length(names(parameter_edits))){
     } else if(length(dangling_double_quote) > 0 && length(dangling_double_quote) < 2){
       y[[names(parameter_edits)[i]]] = gsub("'","",y[[names(parameter_edits)[i]]])
       expression_to_add = paste(new_name,"=",paste(y[[names(parameter_edits)[i]]],"\"",sep=""))
-    } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+    } else if(y[[names(parameter_edits)[i]]]  %in% exceptions_list){
       expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+    } else if(!grepl("/",y[[names(parameter_edits)[i]]])){
+      if(grepl("^[[:digit:]]+",y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else{
+        expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+      }   
     } else if(!grepl("\"",y[[names(parameter_edits)[i]]])){
       expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
     } else{
-      expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      if(is.numeric(y[[names(parameter_edits)[i]]])){
+        expression_to_add = paste(new_name,"=",y[[names(parameter_edits)[i]]])
+      } else{
+        expression_to_add = paste(new_name,"=",paste("\"",y[[names(parameter_edits)[i]]],"\"",sep=""))
+      }
     }
   }
-  
   if(!(paste(line_num) %in% names(all_nf_edits))){
     if(length(lines_to_add) > 0) {
       expressions_to_add = c(lines_to_add,expression_to_add)
@@ -561,7 +626,20 @@ for(i in 1:nrow(nf_script_dat)){
   }
 }
 write.table(x=new_nf_lines,file=updated_nf_file,sep="\n",quote=F,row.names=F,col.names=F)
-  
+####################
+createDummyValue <- function(param_value,param_type){
+  param_value1 = param_value
+  if(is.na(param_value) || is.null(param_value) || param_value == ""){
+    if(param_type == "boolean"){
+      param_value1 = "false"
+    } else if(param_type == "integer"){
+      param_value1 = 0
+    } else{
+      param_value1 = "null"
+    }
+  }
+  return(param_value1)
+}
 ##########################################
 classifyParameters <- function(paramsToXML){
   xmlSections = list()
@@ -573,32 +651,33 @@ classifyParameters <- function(paramsToXML){
     rlog::log_info(paste("LOOKING into",param_name))
     param_value = paramsToXML[[param_name]]
     param_final_name = gsub("params\\.","",param_name)
-    if(grepl("\\$\\{",param_value)){
-      #rlog::log_info(paste("LOOKING up",param_name))
-      param_value = paramsFiller(list_to_fill=c(param_value),y)[1]
+    if(grepl("\\$\\{params\\.",param_value)){
+      rlog::log_info(paste("LOOKING up",param_name,"PARAM_VALUE:",param_value))
+      param_value = paramsFiller(list_to_fill=c(param_value),paramsToXML)[1]
       #rlog::log_info(paste("VALUE is",param_value))
     }
     parameter_type = 'string'
     description = paste(parameter_type,"that defines",param_name)
     parameter_metadata = list()
     filename = basename(param_value)
+    aram_value = gsub("'", "", param_value)
     # initial algo will determine if parameter is string, int, boolean, or path
     if(grepl("/",param_value) || grepl("input",param_name)){
-      simplfied_param_value = gsub("/","",param_value)
-      rlog::log_info(paste("CHECKING if",param_name,"is file or folder. value:",param_name))
-      if(simplfied_param_value != "" && !grepl("https://",param_value)  && !grepl("s3://",param_value) && !grepl("gs://",param_value) && !grepl("core.windows.net",param_value)){
+      split_param_value = strsplit(param_value,"/")[[1]]
+      rlog::log_info(paste("CHECKING if",param_name,"is file or folder. value:",param_value))
+      if((length(split_param_value) > 2 || grepl("input",param_name)) && param_value != "/" && !grepl("https://",param_value)  && !grepl("s3://",param_value) && !grepl("gs://",param_value) && !grepl("core.windows.net",param_value)){
         parameter_type = 'data'
         # if param value contains s3://, *.core.windows.net, or gs://, ignore, we won't put this in the XML
         # if path and contains file extension ('.') --- it's a file, if not it's a dir.
         #  or if the param contains 'dir' 
-        data_type = "FOLDER"
+        data_type = "FILE"
         if(grepl("\\.",filename)){
           data_type = "FILE" 
         } 
         if(grepl("dir",param_name,ignore.case = TRUE)){
           data_type = "FOLDER"
         }
-        if(!grepl("*",param_value) && !grepl("\\{",param_value) && !(grepl("\\[",param_name)) && !(grepl("\\$\\{",paramsToXML[[param_name]]))){
+        if(!grepl("\\*",param_value) && !grepl("\\{",param_value) && !(grepl("\\[",param_name)) && !(grepl("\\$\\{",paramsToXML[[param_name]]))){
           rlog::log_info(paste("ADDING",param_name,"to dataInputs"))
           description = paste("Path",parameter_type,"that defines",data_type,param_name)
           parameter_metadata[["description"]] = description
@@ -624,6 +703,7 @@ classifyParameters <- function(paramsToXML){
         if(grepl("true",param_value,ignore.case=T) || grepl("false",param_value,ignore.case=T)){
           parameter_type = "boolean"
         }
+        param_value = gsub("'","",param_value)
         parameter_metadata[["description"]] = description
         parameter_metadata[["type"]] = parameter_type
         parameter_metadata[["default"]] = param_value
@@ -641,6 +721,7 @@ classifyParameters <- function(paramsToXML){
         if(grepl("true",param_value,ignore.case=T) || grepl("false",param_value,ignore.case=T)){
           parameter_type = "boolean"
         }
+        param_value = createDummyValue(param_value=param_value,param_type=parameter_type)
         parameter_metadata[["description"]] = description
         parameter_metadata[["type"]] = parameter_type
         parameter_metadata[["default"]] = param_value
@@ -668,6 +749,7 @@ if(generate_parameters_xml){
   step_configurations = getXMLSections[["parameterSettings"]]
   rlog::log_info(paste("STEP3:Generating ICA XML based off of",nf_script))
   doc = newXMLDoc()
+  xmlAttrs(doc) = c(encoding="UTF-8",standalone="yes")
   #root = xmlRoot(doc)                                      # FIND ROOT
   #pipeline_node = newXMLNode("pipeline",parent=root)
   root = newXMLNode("pipeline",doc=doc)
@@ -686,9 +768,9 @@ if(generate_parameters_xml){
   #### add data inputs
   rlog::log_info(paste("STEP3a: Adding dataInputs"))
   dataInputsNode = newXMLNode("dataInputs",parent=root)
-  dataInputNode = newXMLNode("dataInput",parent=dataInputsNode)
   if(length(data_input_configurations) >0){
     for(i in 1:length(names(data_input_configurations))){
+      dataInputNode = newXMLNode("dataInput",parent=dataInputsNode)
       if(grepl("folder",data_input_configurations[[names(data_input_configurations)[i]]][["description"]],ignore.case=T)){
         xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FOLDER",required = "true",multiValue = "true")   
       } else{
@@ -698,7 +780,7 @@ if(generate_parameters_xml){
       newXMLNode("description", data_input_configurations[[names(data_input_configurations)[i]]][["description"]], parent=dataInputNode)
     }
   } else{
-    rlog::log_info(paste("STEP3a: No dataInputs found"))
+    rlog::log_warn(paste("STEP3a: No dataInputs found"))
   }
   ############## add parameter options
   ## <pd:step execution="MANDATORY" code="General">
@@ -750,7 +832,7 @@ if(generate_parameters_xml){
       }
     }
   } else{
-    rlog::log_info(paste("STEP3a: No parameters found"))
+    rlog::log_warn(paste("STEP3a: No parameters found"))
   }
   # VIEW XML
   #print(doc)
@@ -763,7 +845,7 @@ if(generate_parameters_xml){
     outputPath = paste(dirname(nf_script),"/",outputFile,sep="")
   }
   rlog::log_info(paste("STEP4: Generating parameters XML to",outputPath))
-  saveXML(doc, file=outputPath)
+  saveXML(doc, file=outputPath,prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n')
 }
 
 
