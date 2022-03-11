@@ -2,13 +2,19 @@
 R-based helper scripts to generate XML files and modifications to NF scripts for ICAv2 compatiblity.
 This is meant to be a developer tool to help them develop Nextflow pipelines that will run successfully on ICA
 
-Nextflow workflows on ICAv2 are orchestrated by kubernetes require an XML file 
-- containing data inputs (i.e. files + folders) and other parameters for parameters to properly be passed from ICA to your Nextflow workflows
+What these scripts do is parse configuration files and the main NF script of a pipeline and update the underlying processes with what's mentioned below.
+Additionally parameters mentioned in these configuration files that are not referenced in the main NF file are brought into the main NF script. As ICA does not
+allow you to use your own configuration files currently
+
+Nextflow workflows on ICA are orchestrated by kubernetes and require a parameters XML file 
+- containing data inputs (i.e. files + folders) and other string-based options for all configurable parameters to properly be passed from ICA to your Nextflow workflows
 - processes will need to contain a reference to a container --- a Docker image that will run that specific process
 - processes will need a  ```pod annotation``` specified for ICA to know what instance type to run the process.
   - A table of instance types and the associated CPU + Memory specs can be found [here](https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types)  
 
 These scripts have been made to be compatible with [nf-core](https://github.com/nf-core) workflows
+
+The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:latest```
 
 **DSL2 compatibility is still in developement**
 
@@ -33,7 +39,7 @@ A current list of todos for this script is [here](https://github.com/keng404/nex
 
 # To create a pipeline in ICA, you can use the following helper script ```nf-core.create_ica_pipeline.R```
 ```bash
-Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name 'Ken_demos' --pipeline-name test_pipeline2 --api-key-file {PATH_TO_API_KEY_FILE}
+Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
 
 By default, this script will automatically try to upload all files found in the same directory as your {NF_SCRIPT}

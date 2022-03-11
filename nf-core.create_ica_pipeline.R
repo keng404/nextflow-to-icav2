@@ -10,7 +10,9 @@ parser <- ArgumentParser()
 # by default ArgumentParser will add an help option 
 
 parser$add_argument("-s", "--nextflow-script","--nextflow_script", default=NULL,
-                    required=TRUE, help="Main nf script for a pipeline")
+                    help="Main nf script for a pipeline")
+parser$add_argument("-l", "--cwl-script","--cwl_script", default=NULL,
+                     help="Main CWL  script for a pipeline")
 parser$add_argument("-z","--storage-size","--storage_size", default="Small",
                     help = "default storage size to run analyses with this pipeline. [Small => 1.2 TB, Medium => 2.4 TB, and Large => 7.2 TB] are storage sizes")
 parser$add_argument("-w","--workflow-language","--workflow_language", default="nextflow",
@@ -27,6 +29,8 @@ parser$add_argument("-i","--ica-project-id","--ica_project_id",
                     default=NULL, help = "ICA project id")
 parser$add_argument("-k","--api-key-file","--api_key_file", required = TRUE,
                     default=NULL, help = "ICA API key file i")
+parser$add_argument("-m","--simple-mode","--simple_mode",action="store_true",
+                    default=FALSE, help = "flag to indicate the creation of a simple pipeline => One workflow script + XML file")
 parser$add_argument("-n","--nf-core-mode","--nf_core_mode",action="store_true",
                     default=FALSE, help = "flag to indicate nf-core pipeline")
 parser$add_argument("--debug",action="store_true", default=FALSE, help = "flag for debug")
@@ -42,28 +46,8 @@ args <- parser$parse_args()
 api_key_file = args$api_key_file
 api_key = read.delim(api_key_file,quote="",header=F)[,1]
 ## main script
-main_script = args$nextflow_script
 ## xml
 xml_file = args$parameters_xml
-
-additional_files = args$project_directory
-files_to_add = list()
-if(!is.null(additional_files)){
-  file_list  = list.files(additional_files,full.names = T,recursive=T)
-  dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
-### folders
-  files_to_add[["folders"]] = dir_list
-### files 
-  files_to_add[["files"]] = file_list
-} else{
-  rlog::log_info(paste("LOOKING for additonal files to add here:",dirname(main_script)))
-  file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
-  dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
-  ### folders
-  files_to_add[["folders"]] = dir_list
-  ### files 
-  files_to_add[["files"]] = file_list
-}
 
 storage_size = args$storage_size
 if(!storage_size %in% allowed_storage_sizes){
@@ -83,6 +67,37 @@ if(!workflow_language %in% allowed_workflow_languages){
   }
   stop(error_message)
 }
+
+if(workflow_language == "cwl"){
+  main_script = args$cwl_script
+} else if(workflow_language == "nextflow"){
+  main_script = args$nextflow_script
+}
+#######################
+additional_files = args$project_directory
+files_to_add = list()
+if(!is.null(additional_files)){
+  file_list  = list.files(additional_files,full.names = T,recursive=T)
+  dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
+### folders
+  files_to_add[["folders"]] = dir_list
+### files 
+  files_to_add[["files"]] = file_list
+} else{
+  if(!args$simple_mode){
+    rlog::log_info(paste("By default, LOOKING for additonal files to add here:",dirname(main_script)))
+    file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
+    dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
+    ### folders
+    files_to_add[["folders"]] = dir_list
+    ### files 
+    files_to_add[["files"]] = file_list
+  } else{
+    rlog::log_info(paste("Not adding additional files to pipeline"))
+  }
+}
+
+
 comments = args$comments
 description = args$description
 is_nf_core = args$nf_core_mode
@@ -95,18 +110,23 @@ if(length(strsplit(pipeline_name,"\\s+")[[1]]) >1){
   pipeline_name = paste("\"",pipeline_name,"\"", sep="")
 }
 
+### auto config ICA CLI ---- for Docker use
+system(paste(paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
+system("expect icav2_cli.auto_config.exp")
+#"-server-url ica.illumina.com")
 
 if(is.null(ica_project_id) && is.null(ica_project_name)){
   stop(paste("Please provide an ICA project ID or ICA project name.\nExciting"))
 } else if(is.null(ica_project_id)){
-  system(paste("icav2 projects list -o json > tmp.json"))
+  rlog::log_info(paste("RUNNING: icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
+  system(paste("icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
   ica_project_lookup = rjson::fromJSON(file="tmp.json")
   if(length(ica_project_lookup$items) < 1){
     stop(paste("Take a look at tmp.json"))
   }
   ica_project_lookup_to_add = ica_project_lookup
   while(!is.null(ica_project_lookup_to_add$nextPageToken)){
-    system(paste("icav2 projects list -o json","--page-token",ica_project_lookup_to_add$nextPageToken,"> tmp.json"))
+    system(paste("icav2 projects list -o json","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"--page-token",ica_project_lookup_to_add$nextPageToken,"> tmp.json"))
     ica_project_lookup_to_add = rjson::fromJSON(file="tmp.json")
     ica_project_lookup$items = append(ica_project_lookup$items, ica_project_lookup_to_add$items)
   }
@@ -153,8 +173,8 @@ if(workflow_language == "nextflow"){
 } else if(workflow_language == "cwl"){
   pipeline_creation_request[["workflowCwlFile"]] = main_script
 }
-base_ica_command = "icav2 projectpipelines create"
-full_ica_command = paste(base_ica_command,workflow_language,pipeline_name,"--project-id",ica_project_id,"--main",main_script,"--parameter",xml_file,"--storage-size",storage_size)
+base_ica_command = "icav2 projectpipelines create -s ica.illumina.com"
+full_ica_command = paste(base_ica_command,"-k",paste("'",api_key,"'",sep=""),workflow_language,pipeline_name,"--project-id",ica_project_id,"--main",main_script,"--parameter",xml_file,"--storage-size",storage_size)
 
 if(!is.null(comments)){
   full_ica_command = paste(full_ica_command,"--comment",paste("\"",comments,"\""))
@@ -213,7 +233,7 @@ if(workflow_language == "cwl"){
   pipeline_creation_url = paste("https://ica.illumina.com/ica/rest/api/projects/",ica_project_id,"/pipelines:createCwlPipeline",sep="")
 }
 
-system("icav2 analysisstorages list -o json > storages.json")
+system(paste("icav2 analysisstorages list -o json","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> storages.json"))
 storages_json = rjson::fromJSON(file="storages.json")
 storage_id = NULL
 for(i in 1:length(storages_json$items)){
