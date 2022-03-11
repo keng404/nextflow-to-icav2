@@ -845,7 +845,7 @@ if(generate_parameters_xml){
     outputPath = paste(dirname(nf_script),"/",outputFile,sep="")
   }
   rlog::log_info(paste("STEP4: Generating parameters XML to",outputPath))
-  saveXML(doc, file=outputPath,prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n')
+  saveXML(doc, file=outputPath,encoding="utf-8")
 }
 
 
