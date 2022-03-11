@@ -22,11 +22,19 @@ Rscript nf-core.json_to_params_xml.R --json {PATH_TO_SCHEMA_JSON}
 nf-core schema build -d {PATH_NF-CORE_DIR}
 ```
 
-# [STILL IN DEVELOPMENT]: To generate an XML file and edits to Nextflow script, use the following template
+# To generate an XML file and edits to Nextflow script, use the following template
 ```bash
-Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH}]
+Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH} or --generate-parameters-xml]
 ```
 Specifying the ```--parameters-xml``` parameter tells the ```nf-core.ica_mod_nf_script.R``` to generate an XML files based on the NF script and config you specify.
 Default behavior is to traverse the config file you provide and parse additional config files that might be referenced.
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
+
+# To create a pipeline in ICA, you can use the following helper script ```nf-core.create_ica_pipeline.R```
+```bash
+Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name 'Ken_demos' --pipeline-name test_pipeline2 --api-key-file {PATH_TO_API_KEY_FILE}
+```
+
+By default, this script will automatically try to upload all files found in the same directory as your {NF_SCRIPT}
+
