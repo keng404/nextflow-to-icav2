@@ -14,7 +14,7 @@ Nextflow workflows on ICA are orchestrated by kubernetes and require a parameter
 
 These scripts have been made to be compatible with [nf-core](https://github.com/nf-core) workflows
 
-The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:latest```
+The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:0.0.1```
 
 **DSL2 compatibility is still in developement**
 
