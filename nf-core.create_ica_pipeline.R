@@ -1,3 +1,4 @@
+options(stringsAsFactors=FALSE)
 suppressPackageStartupMessages(library("argparse"))
 library(rlog)
 library(rjson)
@@ -78,6 +79,10 @@ additional_files = args$project_directory
 files_to_add = list()
 if(!is.null(additional_files)){
   file_list  = list.files(additional_files,full.names = T,recursive=T)
+  file_list = file_list[file_list != main_script && file_list != xml_file]
+  if(length(file_list) > 0) {
+    file_list = file_list[!apply(t(file_list),2,function(x) grepl(".config$",x)) && !apply(t(file_list),2,function(x) grepl(".md$",x)) && !apply(t(file_list),2,function(x) grepl(".png$",x))]
+  }
   dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
 ### folders
   files_to_add[["folders"]] = dir_list
@@ -87,6 +92,10 @@ if(!is.null(additional_files)){
   if(!args$simple_mode){
     rlog::log_info(paste("By default, LOOKING for additonal files to add here:",dirname(main_script)))
     file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
+    file_list = file_list[file_list != main_script & file_list != xml_file]
+    if(length(file_list) > 0) {
+      file_list = file_list[!apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".md$",x)) & !apply(t(file_list),2,function(x) grepl(".png$",x))]
+    }
     dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
     ### folders
     files_to_add[["folders"]] = dir_list
@@ -111,14 +120,17 @@ if(length(strsplit(pipeline_name,"\\s+")[[1]]) >1){
 }
 
 ### auto config ICA CLI ---- for Docker use
-system(paste(paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
-system("expect icav2_cli.auto_config.exp")
+if(!file.exists(paste(Sys.getenv('HOME'),"/.icav2/config.yaml",sep=""))){
+  rlog::log_info(paste("CONFIGURING ICA CLI:\tRunning: ",paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
+  system(paste(paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
+  system("expect icav2_cli.auto_config.exp")
+}
 #"-server-url ica.illumina.com")
 
 if(is.null(ica_project_id) && is.null(ica_project_name)){
   stop(paste("Please provide an ICA project ID or ICA project name.\nExciting"))
 } else if(is.null(ica_project_id)){
-  rlog::log_info(paste("RUNNING: icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
+  ##rlog::log_info(paste("RUNNING: icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
   system(paste("icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
   ica_project_lookup = rjson::fromJSON(file="tmp.json")
   if(length(ica_project_lookup$items) < 1){
@@ -191,7 +203,10 @@ if(!is.na(documentation)){
     description_content = NULL
     lines_to_add = c()
     for(i in 1:nrow(description)){
-     
+     description[i,]  = gsub("\\*","",description[i,])
+     description[i,]  = gsub("\"","",description[i,])
+     description[i,]  = gsub("#","",description[i,])
+     description[i,]  = gsub("`","",description[i,])
       if(!grepl("\\!\\[",description[i,]) && !grepl("docker",description[i,],ignore.case=T) && (grepl("description",description[i,],ignore.case=T) || grepl("doc",description[i,],ignore.case=T))){
         lines_to_add = c(lines_to_add,description[i,])
       }
@@ -203,7 +218,7 @@ if(!is.na(documentation)){
       description_content = paste("\"",description_content,"\"")
     }
     if(is.null(description_content)){
-      description = paste("\"",paste("Please refer to documentation found here:",documentation),"\"")
+      description = paste("\"","Please refer to documentation found here:",documentation,"\"")
     } else{
       description = description_content
     }
@@ -281,11 +296,11 @@ pipeline_creation_request[["categories"]] = ""
 pipeline_creation_request[["htmlDocumentation"]] = ""
 pipeline_creation_request[["metadataModelFile"]] = "" 
 ###### ATTEMPT ____ MANUALLY CREATE ACTUAL CURL COMMAND TO ICA API rest server to  create pipeline
-curl_command = paste("curl -X 'POST'",pipeline_creation_url)
+curl_command = paste("curl --verbose -X 'POST'",pipeline_creation_url)
 files_sections = c("otherNextflowFiles","toolCwlFiles","mainNextflowFile","parametersXmlFile","workflowCwlFile")
 #adding headers
 curl_command = paste(curl_command,"-H 'accept: application/vnd.illumina.v3+json'")
-curl_command = paste(curl_command,"-H 'X-API-Key:",api_key,"'")
+curl_command = paste(curl_command,"-H 'X-API-Key:",paste(api_key,"'",sep=""))
 curl_command = paste(curl_command,"-H 'Content-Type: multipart/form-data'")
 for(i in 1:length(names(pipeline_creation_request))){
   if(!names(pipeline_creation_request)[i] %in% files_sections){
@@ -300,13 +315,16 @@ for(i in 1:length(names(pipeline_creation_request))){
       } else if(workflow_language == "cwl"){
         other_files =  pipeline_creation_request[["toolCwlFiles"]]
       }
-      rlog::log_info(paste("OTHER_FILES_TO_ADD",paste(other_files,collapse=", ")))
-      for(fidx in 1:length(other_files)){
-        current_file = other_files[fidx]
-        type_str = paste(";type=",mime::guess_type(current_file),sep="")
-        filepath_str = paste(";filename=",gsub(base_path,"",current_file),sep="")
-        string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,type_str,"'",sep=""))
-        curl_command = paste(curl_command,string_to_add)
+      if(length(other_files) > 0){
+        rlog::log_info(paste("OTHER_FILES_TO_ADD",paste(other_files,collapse=", ")))
+        for(fidx in 1:length(other_files)){
+          current_file = other_files[fidx]
+          #type_str = paste(";type=",mime::guess_type(current_file),sep="")
+          filepath_str = paste(";filename=",gsub(base_path,"",current_file),sep="")
+          string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,"'",sep=""))
+          #string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,type_str,"'",sep=""))
+          curl_command = paste(curl_command,string_to_add)
+        }
       }
     } else if(names(pipeline_creation_request)[i] == "parametersXmlFile"){
       string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",pipeline_creation_request[[names(pipeline_creation_request)[i]]],";type=text/xml'",sep=""))
@@ -325,6 +343,7 @@ if(!args$debug){
   #pipeline_creation_response = httr::POST(pipeline_creation_url,config=httr::add_headers("X-API-Key"=api_key), httr::accept("application/vnd.illumina.v3+json"),httr::content_type("multipart/form-data"),body = pipeline_creation_request,encode="multipart", verbose())
   #pipeline_creation_response_list = str(content(pipeline_creation_response, "parsed"))
   if(!"pipeline" %in% names(pipeline_creation_response)){
+    rlog::log_error(paste("Could not create pipeline for",main_script))
     #print(pipeline_creation_response_list)
     print(pipeline_creation_response)
   } else{

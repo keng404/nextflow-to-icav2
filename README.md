@@ -14,9 +14,9 @@ Nextflow workflows on ICA are orchestrated by kubernetes and require a parameter
 
 These scripts have been made to be compatible with [nf-core](https://github.com/nf-core) workflows
 
-The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:0.0.1```
+The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:0.0.2```
 
-**DSL2 compatibility is still in developement**
+**DSL2 compatibility is now implemented but needs to be tested (i.e. successful pipeline runs)**
 
 # To generate an XML file from nf-core pipeline
 ```bash
@@ -33,7 +33,7 @@ nf-core schema build -d {PATH_NF-CORE_DIR}
 Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH} or --generate-parameters-xml]
 ```
 Specifying the ```--parameters-xml``` parameter tells the ```nf-core.ica_mod_nf_script.R``` to generate an XML files based on the NF script and config you specify.
-Default behavior is to traverse the config file you provide and parse additional config files that might be referenced.
+Default behavior is to traverse the config file you provide and parse additional config files that might be referenced. Not setting the ```--parameters-xml``` flag will tell the script to just focus on making edits to NF script.
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
 
@@ -42,5 +42,5 @@ A current list of todos for this script is [here](https://github.com/keng404/nex
 Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
 
-By default, this script will automatically try to upload all files found in the same directory as your {NF_SCRIPT}
+By default, this script will automatically try to upload all files found in the same directory as your {NF_SCRIPT}, excluding any nextflow config files (i.e. *config)
 

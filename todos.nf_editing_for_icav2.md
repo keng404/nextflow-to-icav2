@@ -2,7 +2,7 @@
 - [X] 1) properly identify glob expressions or expressions as strings and not input paths
 - [ ] 2) relative / absolute file paths in DSL 1 NF scripts
 - [X] 3) get default container
-- [ ] 4) create lists in parameters XML where appropriate for the nf-core pipelines. 
+- [X] 4) create lists in parameters XML where appropriate for the nf-core pipelines. 
  	```nextflow_schema.json``` files --under 'properties' have 'list' and 'enum' fields that can be used.
 - [X] 5) add dummy process at end of script that:
       	       	- [X] copies intermediate results and logs for dev work
@@ -16,7 +16,7 @@
 		- [X] add pod anotation, container references when needed (edits where we add)
 		  - How to manage processes with no input expression? -- second pass?
 		  - How to select for process container where configurations point to a Groovy expression?
-- [ ] 8) add DSL2 support
+- [X] 8) add DSL2 support
  		- might not have to worry about 2)
  		- make sure to track and properly edit multiple NF scripts that get referenced
 

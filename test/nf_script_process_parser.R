@@ -24,6 +24,7 @@ getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table)
     }
 }
 
+
 foi = "/Users/keng/nf-core/sarek/main.nf"
 
 parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default_container,ica_instance_table){
