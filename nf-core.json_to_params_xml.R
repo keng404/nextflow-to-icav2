@@ -1,3 +1,4 @@
+options(stringsAsFactors=FALSE)
 suppressPackageStartupMessages(library("argparse"))
 library(rlog)
 library(rjson)
@@ -14,6 +15,8 @@ parser$add_argument("-o","--output-xml","--output_xml", default=NULL,
                     help = "output file name for parameters XML file")
 parser$add_argument("-i","--include_hidden_parameters",action="store_true",
                     default=FALSE, help = "include all parameters in XML")
+parser$add_argument("-n","--nf-core-mode","--nf_core_mode",action="store_true",
+                    default=FALSE, help = "flag to indicate nf-core pipeline")
 parser$add_argument("-s","--sections_override", default=c("input_output_options"),
                     action="append",help="section in schema JSON file to ensure it's presence in the output XML file")
 # get command line options, if help option encountered print help and exit,
@@ -23,7 +26,7 @@ args <- parser$parse_args()
 if(!is.null(args$json)){
   nf_params_json = args$json
 } else{
-  stop(paste("Please define a Nextflow Schema JSON file to convert to XML"))
+  stop(paste("EXITING: Please define a Nextflow Schema JSON file to convert to XML"))
 }
 #nf_params_json = "/Users/keng/nf-core/sarek/nextflow_schema.json"
 rlog::log_info(paste("Step0: Reading in",nf_params_json))
@@ -46,7 +49,9 @@ returnParamMetadata <- function(param_configuration){
   if("description" %in% names(param_configuration)){
     param_configuration[["description"]] = paste(strsplit(param_configuration[["description"]],"\n")[[1]],collapse="\n")
     #param_configuration[["description"]] = gsub("\n","\\n",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub("\"","",param_configuration[["description"]])
     param_configuration[["description"]] = gsub("`","",param_configuration[["description"]])
+    param_configuration[["description"]] = gsub("\\*","-",param_configuration[["description"]])
     param_configuration[["description"]] = gsub("\\*\\*\\NB\\*\\*","",param_configuration[["description"]])
     param_configuration[["description"]] = gsub("&","",param_configuration[["description"]])
     param_configuration[["description"]] = gsub(">","",param_configuration[["description"]])
@@ -54,6 +59,8 @@ returnParamMetadata <- function(param_configuration){
   }
   if("help_text" %in% names(param_configuration)){
     param_configuration[["help_text"]] = paste(strsplit(param_configuration[["help_text"]],"\n")[[1]],collapse="\n")
+    param_configuration[["help_text"]] = gsub("\"","",param_configuration[["help_text"]])
+    param_configuration[["help_text"]] = gsub("\\*","-",param_configuration[["help_text"]])
     #param_configuration[["help_text"]] = gsub("\n","\\n",param_configuration[["help_text"]])
     param_configuration[["help_text"]] = gsub("`","",param_configuration[["help_text"]])
     param_configuration[["help_text"]] = gsub(">","",param_configuration[["help_text"]])
@@ -61,7 +68,7 @@ returnParamMetadata <- function(param_configuration){
     param_configuration[["help_text"]] = gsub("&","",param_configuration[["help_text"]])
     description_text = c(description_text,param_configuration[["help_text"]])
   }
-  param_metadata[["description"]] = paste(description_text,collapse="\\n")
+  param_metadata[["description"]] = paste(description_text,collapse="\n")
   ### default value
   if("default" %in% names(param_configuration)){
     param_metadata[["default"]] = param_configuration[["default"]]
@@ -71,6 +78,8 @@ returnParamMetadata <- function(param_configuration){
   ### list of accepted settings for parameter
   if("list" %in% names(param_configuration)){
     param_metadata[["list"]] = param_configuration[["list"]]
+  } else if ("enum" %in% names(param_configuration)){
+    param_metadata[["list"]] = param_configuration[["enum"]]
   } else{
     param_metadata[["list"]] = NULL
   }
@@ -108,7 +117,6 @@ getParams <- function(param_data,include_hidden_parameters=args$include_hidden_p
     }
   }
   ### 1st attempt to include parameters from NF pipelines not in nf-core
-  if(isTRUE(include_hidden_parameters)){
     rlog::log_info("ADDING_HIDDEN_PARAMETERS")
     param_names = names(generic_data)
     genericParams = list()
@@ -121,7 +129,6 @@ getParams <- function(param_data,include_hidden_parameters=args$include_hidden_p
     if(length(genericParams) > 0){
       parameterConfigs[["all_options"]] = genericParams  
     }
-  }
   return(parameterConfigs)
 }
 rlog::log_info(paste("Step1: Parsing",nf_params_json))
@@ -139,7 +146,7 @@ retrieveDataInput <- function(param_configuration){
   dataInputs = list()
   param_names = names(param_configuration)
   for(i in 1:length(param_names)){
-    if(grepl("Path",param_configuration[[param_names[i]]][["description"]],ignore.case=T)){
+    if(grepl("Path",param_configuration[[param_names[i]]][["description"]],ignore.case=T) && !grepl("*",param_configuration[[param_names[i]]][["description"]])){
       is_data_input = c(is_data_input,param_names[i])
     }
   }
@@ -178,6 +185,14 @@ convertParams <- function(parsed_json){
 rlog::log_info(paste("STEP2: Converting JSON to be ready for ICA XML"))
 y = convertParams(x)
 data_input_configurations = y[["dataInputs"]]
+if(args$nf_core_mode){
+  ########### workaround add input files --- will not be used by pipeline , but by ICA to stage the data
+  if(!"input" %in% names(data_input_configurations) || length(names(data_input_configurations)) == 0){
+    data_input_configurations[["input_files"]] = list()
+    data_input_configurations[["input_files"]][["description"]] = 'input files for pipeline.\nAll files will be staged in workflow.launchDir'
+  }
+}
+#####################
 step_configurations = y[["steps"]]
 # XML STRING 
 prefix.xml <- "
@@ -214,7 +229,11 @@ if(length(data_input_configurations) >0){
     if(grepl("folder",data_input_configurations[[names(data_input_configurations)[i]]][["description"]],ignore.case=T)){
       xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FOLDER",required = "true",multiValue = "true")   
   } else{
-      xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FILE",required = "true",multiValue = "true")   
+      if(names(data_input_configurations)[i]  == "input_files" && data_input_configurations[[names(data_input_configurations)[i]]][["description"]] == 'input files for pipeline.\nAll files will be staged in workflow.launchDir'){
+        xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FILE",required = "false",multiValue = "true")   
+      } else{
+        xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FILE",required = "true",multiValue = "true")   
+      }
     }
     newXMLNode("label", names(data_input_configurations)[i], parent=dataInputNode)
     newXMLNode("description", data_input_configurations[[names(data_input_configurations)[i]]][["description"]], parent=dataInputNode)
@@ -259,12 +278,40 @@ if(length(step_configurations)>0){
       xmlAttrs(nested_parameter_node) = c(code = names(step_configurations[[names(step_configurations)[i]]])[j],minValues = "1",maxValues="1",classification="USER")
       newXMLNode("label",parameter_names[j],parent=nested_parameter_node)
       newXMLNode("description",parameter_metadata[["description"]],parent=nested_parameter_node)
-      if(grepl("number",parameter_metadata[["type"]],ignore.case = T)){
-        newXMLNode(paste("integer","Type",sep=""),parent=nested_parameter_node)
+      #### adding options if a list of values are provided
+      if("list" %in% names(parameter_metadata)){
+        list_vals = parameter_metadata[["list"]]
+        if(length(list_vals) > 0){
+          options_node = newXMLNode(paste("optionsType"),parent=nested_parameter_node)
+          for(lv in 1:length(list_vals)){
+            newXMLNode("option",list_vals[lv],parent=options_node)
+          }
+        }
       } else{
-        newXMLNode(paste(paste(parameter_metadata[["type"]],"Type",sep=""),sep=""),parent=nested_parameter_node)
+        if(grepl("number",parameter_metadata[["type"]],ignore.case = T)){
+          newXMLNode(paste("integer","Type",sep=""),parent=nested_parameter_node)
+        } else{
+          newXMLNode(paste(paste(parameter_metadata[["type"]],"Type",sep=""),sep=""),parent=nested_parameter_node)
+        }
       }
       if("default" %in% names(parameter_metadata)){
+        dummy_value = ""
+        if(parameter_metadata[["default"]] != ""){
+          if(parameter_metadata[["default"]] == FALSE){
+            parameter_metadata[["default"]] = "false"
+          } else if(parameter_metadata[["default"]] == TRUE){
+            parameter_metadata[["default"]] = "true"
+          }
+        } else{
+          if(parameter_metadata[["type"]] == "boolean"){
+            dummy_value = "false"
+          } else if(grepl("number",parameter_metadata[["type"]],ignore.case = T)){
+            dummy_value = 0
+          } else{
+            dummy_value = "null"
+          }
+          parameter_metadata[["default"]] = dummy_value
+        }
         newXMLNode("value",parameter_metadata[["default"]],parent=nested_parameter_node)
       } else{
         dummy_value = ""
