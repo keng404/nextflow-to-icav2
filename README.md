@@ -16,6 +16,20 @@ These scripts have been made to be compatible with [nf-core](https://github.com/
 
 The scripts mentioned below can be run in a docker image ```keng404/nfcore-to-ica:0.0.2```
 
+You'll first need to download the python module from nf-core via a ```pip install nf-core``` command
+Then you can use nf-core list --json to return a JSON metadata file containing current pipelines in the nf-core repository. You can choose which pipelines to  ```git clone``` but as a convenience, the wrapper ```nf-core.conversion_wrapper.R ``` will perform a git pull, parse nextflow_schema.json files and generate parameter XML files, and then read configuration and nextflow scripts and make some initial modifications for ICA development. Lastly these pipelines are created in an ICA project of your choosing. So you will need to generate and download an API key from the ICA domain of your choosing.
+
+```bash
+Rscript nf-core.conversion_wrapper.R --input {PIPELINE_JSON_FILE} --staging_directory {DIRECTORY_WHERE_NF_CORE_PIPELINES_ARE_LOCATED} --run-scripts {DIRECTORY_WHERE_THESE_R_SCRIPTS_ARE_LOCATED}  --intermediate-copy-template {DIRECTORY_WHERE_THESE_R_SCRIPTS_ARE_LOCATED}/dummy_template.txt --create-pipeline-in-ica --api-key-file {API_KEY_FILE} --ica-project-name {ICA_PROJECT_NAME}--nf-core-mode 
+```
+
+In summary, you will need the following prerequisites, either to run the wrapper referenced above or to carry out individual steps below.
+- 1) ```git clone``` nf-core pipelines of interest
+- 2) Install the python module ```nf-core`` and create a JSON file using the command line ``` nf-core list --json > {PIPELINE_JSON_FILE}```
+
+** For non nf-core pipelines, you can try to generate a parameters XML and modify the NF scripts of your pipeline by using the ```nf-core.ica_mod_nf_script.R ``` script. Just be sure to add the ```generate-xml``` flag to enable the creation of an XML file and ```--enable-dsl2``` flag to have the script appropriately handle Nextflow workflows implemented in DSL2.
+
+
 **DSL2 compatibility is now implemented but needs to be tested (i.e. successful pipeline runs)**
 
 # To generate an XML file from nf-core pipeline
