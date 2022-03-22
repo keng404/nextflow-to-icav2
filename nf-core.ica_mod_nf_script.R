@@ -1095,6 +1095,7 @@ if(length(final_config_list) > 0){
   nf_process_metadata = list()
 }
 
+
 ### add DSL2 support for this process, adding different process metadata for ICA to 
 ### properly handle these workflows
 

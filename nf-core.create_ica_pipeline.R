@@ -81,7 +81,7 @@ if(!is.null(additional_files)){
   file_list  = list.files(additional_files,full.names = T,recursive=T)
   file_list = file_list[file_list != main_script && file_list != xml_file]
   if(length(file_list) > 0) {
-    file_list = file_list[!apply(t(file_list),2,function(x) grepl(".config$",x)) && !apply(t(file_list),2,function(x) grepl(".md$",x)) && !apply(t(file_list),2,function(x) grepl(".png$",x))]
+    file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".md$",x)) & !apply(t(file_list),2,function(x) grepl(".png$",x))]
   }
   dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
 ### folders
@@ -94,7 +94,7 @@ if(!is.null(additional_files)){
     file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
     file_list = file_list[file_list != main_script & file_list != xml_file]
     if(length(file_list) > 0) {
-      file_list = file_list[!apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".md$",x)) & !apply(t(file_list),2,function(x) grepl(".png$",x))]
+      file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".md$",x)) & !apply(t(file_list),2,function(x) grepl(".png$",x))]
     }
     dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
     ### folders
@@ -296,7 +296,7 @@ pipeline_creation_request[["categories"]] = ""
 pipeline_creation_request[["htmlDocumentation"]] = ""
 pipeline_creation_request[["metadataModelFile"]] = "" 
 ###### ATTEMPT ____ MANUALLY CREATE ACTUAL CURL COMMAND TO ICA API rest server to  create pipeline
-curl_command = paste("curl --verbose -X 'POST'",pipeline_creation_url)
+curl_command = paste("curl --verbose -vL -X 'POST'",pipeline_creation_url)
 files_sections = c("otherNextflowFiles","toolCwlFiles","mainNextflowFile","parametersXmlFile","workflowCwlFile")
 #adding headers
 curl_command = paste(curl_command,"-H 'accept: application/vnd.illumina.v3+json'")
