@@ -85,8 +85,10 @@ if(!is.null(additional_files)){
   }
   dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
 ### folders
+  dir_list = dir_list[!apply(t(dir_list),2,function(x) x == file.path(dirname(main_script),"docs"))]
   files_to_add[["folders"]] = dir_list
 ### files 
+  file_list = file_list[!apply(t(file_list),2,function(x) grepl(file.path(dirname(main_script),"docs"),x))]
   files_to_add[["files"]] = file_list
 } else{
   if(!args$simple_mode){
@@ -97,9 +99,11 @@ if(!is.null(additional_files)){
       file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".md$",x)) & !apply(t(file_list),2,function(x) grepl(".png$",x))]
     }
     dir_list = sort(unique(apply(t(file_list),2, function(x) dirname(x))))
+    dir_list = dir_list[!apply(t(dir_list),2,function(x) x == file.path(dirname(main_script),"docs"))]
     ### folders
     files_to_add[["folders"]] = dir_list
     ### files 
+    file_list = file_list[!apply(t(file_list),2,function(x) grepl(file.path(dirname(main_script),"docs"),x))]
     files_to_add[["files"]] = file_list
   } else{
     rlog::log_info(paste("Not adding additional files to pipeline"))
@@ -172,6 +176,9 @@ if(is.null(comments) && is_nf_core){
   comments = paste("nf-core pipeline",basename(dirname(main_script)))
   #comments = paste(strsplit(comments,"[::punc::]+")[[1]],collapse = " ")
   comments = gsub("[\\(\\)\\[\\]]","  ",comments,perl=T)
+  if(!grepl("\"",comments)){
+    comments = paste("\"",comments,"\"")
+  }
 } 
 
 
