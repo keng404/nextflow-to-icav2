@@ -1174,7 +1174,7 @@ ica_instance_table = get_instance_type_table(url=instance_type_table_url)
 ##  2) defines a docker image to run the instance on
 
 getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table){
-  pod_annotation_prefix = paste("pod annotation:", "'scheduler.illumina.com/presetSize'", "value:")
+  pod_annotation_prefix = paste("pod annotation:", "'scheduler.illumina.com/presetSize'", ",","value:")
   pod_annotation = NULL
   pod_value = NA
   search_query = c()

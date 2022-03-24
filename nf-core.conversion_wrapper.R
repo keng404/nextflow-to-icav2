@@ -251,8 +251,13 @@ if(args$create_pipeline_in_ica){
     all_nf_scripts = names(nextflow_scripts)
     scripts_to_create = all_nf_scripts[all_nf_scripts %in% names(nextflow_configs)]
     scripts_skipped = all_nf_scripts[!all_nf_scripts %in% scripts_to_create]
+    ####################
+    dsl2_scripts_to_update = names(dsl2_nextflow_scripts)
+    scripts_to_create = c(scripts_to_create,dsl2_scripts_to_update)
+    scripts_skipped =scripts_skipped[!scripts_skipped %in% dsl2_scripts_to_update]
     for(l in 1:length(scripts_to_create)){
       setwd(run_scripts)
+      if(scripts_to_create[l] %in% names(nextflow_scripts)){
       xml_files = list.files(dirname(nextflow_scripts[[scripts_to_create[l]]]),"*.pipeline.xml",full.names=T)
       xml_files = xml_files[!grepl("nfcore",xml_files)]
       xml_files = xml_files[!apply(t(xml_files),2,function(x) strsplit(basename(x),"\\.")[[1]][2] == "nf-core")]
@@ -264,6 +269,20 @@ if(args$create_pipeline_in_ica){
         system(run_cmd)
         } else{
         rlog::low_warn(paste("CANNOT find xml for:",gsub(".nf$",".ica.dev.nf",nextflow_scripts[[scripts_to_create[l]]])))
+        }
+      } else{
+        xml_files = list.files(dirname(dsl2_nextflow_scripts[[scripts_to_create[l]]]),"*.pipeline.xml",full.names=T)
+        xml_files = xml_files[!grepl("nfcore",xml_files)]
+        xml_files = xml_files[!apply(t(xml_files),2,function(x) strsplit(basename(x),"\\.")[[1]][2] == "nf-core")]
+        if(length(xml_files)>0){
+          pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
+          run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",dsl2_nextflow_scripts[[scripts_to_create[l]]]),"--workflow-language nextflow")
+          run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
+          rlog::log_info(paste("Running DSL2-enabled pipeline creation",run_cmd))
+          system(run_cmd)
+        } else{
+          rlog::low_warn(paste("CANNOT find xml for:",gsub(".nf$",".ica.dev.nf",dsl2_nextflow_scripts[[scripts_to_create[l]]])))
+        }
       }
     }
   }
