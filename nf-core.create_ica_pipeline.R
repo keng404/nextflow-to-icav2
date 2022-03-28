@@ -254,7 +254,7 @@ if(args$simple_mode){
   file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
   file_list = file_list[file_list != main_script & file_list != xml_file]
   if(length(file_list) > 0) {
-    file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x))]
+    file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x)) & !apply(t(file_list),2,function(x) grepl(".pipeline.xml$",x))]
   }
   library(XML)
   library(rlog)
