@@ -227,7 +227,7 @@ if(length(data_input_configurations) >0){
   for(i in 1:length(names(data_input_configurations))){
     dataInputNode = newXMLNode("dataInput",parent=dataInputsNode)
     if(grepl("folder",data_input_configurations[[names(data_input_configurations)[i]]][["description"]],ignore.case=T)){
-      xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FOLDER",required = "true",multiValue = "true")   
+      xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "DIRECTORY",required = "true",multiValue = "true")   
   } else{
       if(names(data_input_configurations)[i]  == "input_files" && data_input_configurations[[names(data_input_configurations)[i]]][["description"]] == 'input files for pipeline.\nAll files will be staged in workflow.launchDir'){
         xmlAttrs(dataInputNode) = c(code = names(data_input_configurations)[i] ,format = "UNKNOWN",type = "FILE",required = "false",multiValue = "true")   

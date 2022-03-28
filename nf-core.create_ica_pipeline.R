@@ -249,6 +249,44 @@ if(workflow_language == "nextflow"){
   }
 }
 
+## if simple_mode == TRUE , then modify XML file and upload the rest of the files to the project
+if(args$simple_mode){
+  file_list  = list.files(dirname(main_script),full.names = T,recursive=T)
+  file_list = file_list[file_list != main_script & file_list != xml_file]
+  if(length(file_list) > 0) {
+    file_list = file_list[!apply(t(file_list),2,function(x) x == file.path(dirname(main_script),"main.nf")) & !apply(t(file_list),2,function(x) grepl(".config$",x))]
+  }
+  library(XML)
+  library(rlog)
+  dummy_xml = xml_file
+  doc = xmlTreeParse(dummy_xml,useInternalNodes = TRUE)
+  root = xmlRoot(doc)
+  dataInputsNode = root[["dataInputs"]]
+  new_input_node_attributes = c(code = "project_dir",format = "UNKNOWN",type = "DIRECTORY",required = "true",multiValue = "true")  
+  
+  node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
+  newXMLNode("label", "project_dir", parent=node_object)
+  newXMLNode("description", "directory with additional files/input to run pipeline --- other files in your github project", parent=node_object)
+  
+  outputPath = gsub(".xml$",".updated.xml",dummy_xml)
+  rlog::log_info(paste("Updating parameters XML here:",outputPath))
+  #prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+  prefix.xml <- "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+  saveXML(doc , file=outputPath,encoding="utf-8")
+  xml_file = outputPath
+  rlog::log_info(paste("Resetting parameters XML to:",outputPath))
+  pipeline_creation_request[["parametersXmlFile"]] = xml_file
+  #####################################################
+  files_to_stage = file_list
+  for(fts in 1:length(files_to_stage)){
+    base_path = paste(dirname(main_script),"/",sep="")
+    local_path = files_to_stage[fts]
+    ica_path = paste(pipeline_name,"_project_dir/",gsub(base_path,"",local_path),sep="")
+    upload_cmd = paste("icav2 projectdata upload", local_path, ica_path,'--project-id',ica_project_id,"-k",paste("'",api_key,"'",sep=""),"-s ica.illumina.com")
+    rlog::log_info(paste("RUNNING UPLOAD_CMD:",upload_cmd))
+    system(upload_cmd)
+  }
+}
 # return result to check if we're good
 pipeline_creation_url = paste("https://ica.illumina.com/ica/rest/api/projects/",ica_project_id,"/pipelines:createNextflowPipeline",sep="")
 if(workflow_language == "cwl"){
