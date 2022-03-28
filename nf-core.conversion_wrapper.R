@@ -265,6 +265,7 @@ if(args$create_pipeline_in_ica){
         pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
         run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",nextflow_scripts[[scripts_to_create[l]]]),"--workflow-language nextflow")
         run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
+        run_cmd  = paste(run_cmd,"--simple-mode")
         rlog::log_info(paste("Running",run_cmd))
         system(run_cmd)
         } else{
@@ -278,6 +279,7 @@ if(args$create_pipeline_in_ica){
           pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
           run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",dsl2_nextflow_scripts[[scripts_to_create[l]]]),"--workflow-language nextflow")
           run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
+          run_cmd  = paste(run_cmd,"--simple-mode")
           rlog::log_info(paste("Running DSL2-enabled pipeline creation",run_cmd))
           system(run_cmd)
         } else{
