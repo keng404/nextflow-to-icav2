@@ -281,7 +281,7 @@ if(args$simple_mode){
   for(fts in 1:length(files_to_stage)){
     base_path = paste(dirname(main_script),"/",sep="")
     local_path = files_to_stage[fts]
-    ica_path = paste(pipeline_name,"_project_dir/",gsub(base_path,"",local_path),sep="")
+    ica_path = paste("/",pipeline_name,"_project_dir/",gsub(base_path,"",local_path),sep="")
     upload_cmd = paste("icav2 projectdata upload", local_path, ica_path,'--project-id',ica_project_id,"-k",paste("'",api_key,"'",sep=""),"-s ica.illumina.com")
     rlog::log_info(paste("RUNNING UPLOAD_CMD:",upload_cmd))
     system(upload_cmd)
