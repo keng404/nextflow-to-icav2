@@ -16,9 +16,10 @@
 		- [X] add pod anotation, container references when needed (edits where we add)
 		  - How to manage processes with no input expression? -- second pass?
 		  - How to select for process container where configurations point to a Groovy expression?
-- [X] 8) add DSL2 support
- 		- might not have to worry about 2)
- 		- make sure to track and properly edit multiple NF scripts that get referenced
+- [] 8) add DSL2 support
+ 		- [X] make sure to track and properly edit multiple NF scripts ( main, workflow, subworkflow, module) that get referenced
+ 		- [ ] properly pass publishDir and process.ext.args to downstream processes
+- [] 9) add/reference user guide on additional development tips/topics when migrating nextflow pipelines to ICA
 
 # DEVOPS TODO LIST:
 - [X]  *install_packages.R* script that defines libraries to install
