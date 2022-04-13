@@ -14,12 +14,12 @@
 - [X] 7) parse NFscripts for process enclosures
 		- [X] look for labels, cpu, memory  ( edits where we remove)
 		- [X] add pod anotation, container references when needed (edits where we add)
-		  - How to manage processes with no input expression? -- second pass?
-		  - How to select for process container where configurations point to a Groovy expression?
-- [] 8) add DSL2 support
+		- [ ] How to manage processes with no input expression? -- second pass?
+		- [ ] How to select for process container where configurations point to a Groovy expression?
+- [ ] 8) add DSL2 support
  		- [X] make sure to track and properly edit multiple NF scripts ( main, workflow, subworkflow, module) that get referenced
  		- [ ] properly pass publishDir and process.ext.args to downstream processes
-- [] 9) add/reference user guide on additional development tips/topics when migrating nextflow pipelines to ICA
+- [ ] 9) add/reference user guide on additional development tips/topics when migrating nextflow pipelines to ICA
 
 # DEVOPS TODO LIST:
 - [X]  *install_packages.R* script that defines libraries to install
