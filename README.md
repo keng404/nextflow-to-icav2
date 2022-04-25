@@ -56,5 +56,10 @@ A current list of todos for this script is [here](https://github.com/keng404/nex
 Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
 
+# As a convenience, one can also get a templated CLI command to help them run a pipeline in ICA via the following:
+```bash
+Rscript launch_pipeline_mock_pipeline_cli.R --pipeline-name {PIPELINE_NAME} --workflow-language {xml or nextflow} --parameters-xml {PATH_TO_PARAMETERS_XML}
+```
+
 By default, this script will automatically try to upload all files found in the same directory as your {NF_SCRIPT}, excluding any nextflow config files (i.e. *config)
 
