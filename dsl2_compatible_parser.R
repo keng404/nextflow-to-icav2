@@ -76,6 +76,11 @@ find_all_nf_scripts <- function(main_script){
       clean_line[j] = trimws(line_split[j])
     }
     clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
+    if(length(clean_line) < 1){
+      skip_line = TRUE
+    }
+    rlog::log_info(paste("MY_LINE:",clean_line))
     if(grepl("/",clean_line[1])){
       skip_line = TRUE
     } else{
@@ -103,11 +108,12 @@ find_all_nf_scripts <- function(main_script){
           rlog::log_info(paste("Found_Scripts:",paste(script_to_add,collapse=", ")))
           ######### assumes we are writing a new file based on the original main_script
           final_relative_path = gsub(paste(main_script,"/",sep=""),"",script_to_add)
-          new_file_name = gsub(".nf$",".def.nf",final_relative_path)
+          new_file_name = gsub(".nf$",".dev.nf",final_relative_path)
           new_file_path = file.path(dirname(location_to_add),basename(new_file_name))
           scripts_rename[[clean_line[length(clean_line)]]] = new_file_path
           #############################################################
           scripts_to_look_at = c(scripts_to_look_at,script_to_add)
+          scripts_metadata[[clean_line[length(clean_line)]]] = script_to_add
         }
       }
     }
@@ -143,6 +149,7 @@ getWorkflowEvents <- function(script){
       clean_line[j] = trimws(line_split[j])
     }
     clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
     if(grepl("/",clean_line[1])){
       skip_line = TRUE
       if(skip_line && in_workflow_event_process){
@@ -270,3 +277,558 @@ getWorkflowEvents <- function(script){
 ## create dummy submodule for copying intermediate files
 ## add this process to main script and call it
 ##########3
+
+#### read in NF script and modify container amap
+fixNullContainerMap <- function(nf_script){
+  nf_script_dat = read.delim(nf_script,quote="",header=F)
+  lines_to_keep = c()
+  line_numbers = c()
+  for(i in 1:nrow(nf_script_dat)){
+    skip_line = FALSE
+    line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
+    clean_line = line_split
+    for(j in 1:length(line_split)){
+      clean_line[j] = trimws(line_split[j])
+    }
+    clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
+    if(length(clean_line) < 1){
+      lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
+      line_numbers = c(line_numbers,i)
+    } else{
+      if(grepl("/",clean_line[1])){
+        skip_line = TRUE
+        if(skip_line){
+          rlog::log_info(paste("Adding comment line:"))
+          rlog::log_info(paste("PROCESS_LINE:",nf_script_dat[i,]))
+          lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
+          line_numbers = c(line_numbers,i)
+        }
+      } else{
+        if(clean_line[1] == 'container'){
+          idx_of_interest = 2
+          if(is.null(clean_line[idx_of_interest]) || clean_line[idx_of_interest] == 'null'){
+            rlog::log_info(paste("found null container reference:",nf_script_dat[i,]))
+            nf_script_dat[i,] = gsub('null','library/ubuntu:20.04',nf_script_dat[i,])
+            rlog::log_info(paste("Changing line to:",nf_script_dat[i,]))
+            lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
+            line_numbers = c(line_numbers,i)
+          } else{
+            lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
+            line_numbers = c(line_numbers,i)
+          }
+        } else{
+          lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
+          line_numbers = c(line_numbers,i)
+        }
+      }
+    }
+  }
+  modified_script = gsub(".nf$",".dev.nf",nf_script)
+  write.table(lines_to_keep,file=modified_script,row.names=F,col.names = F,quote=F)
+  rlog::log_info(paste("Updating",nf_script))
+  system(paste("cp",modified_script,nf_script))
+}
+#### check for syntax errors regarding processes in nextflow script
+processEnclosureCheck <- function(processLines){
+  modProcessLines = list()
+  if(length(processLines) >0 ){
+    process_names = names(processLines)
+    rlog::log_info(paste("PROCESS_NAMES:",paste(names(processLines),collapse=",")))
+    for(i in 1:length(process_names)){
+      process_name = process_names[i]
+      process_lines = processLines[[process_name]][["process_lines"]]
+      my_left_braces = c()
+      my_right_braces = c()
+      for(j in 1:length(process_lines)){
+        skip_line = FALSE
+        line_split = strsplit(process_lines[j],"\\s+")[[1]]
+        clean_line = line_split
+        for(k in 1:length(line_split)){
+          clean_line[k] = trimws(line_split[k])
+        }
+        clean_line = clean_line[clean_line!=""]
+        clean_line = clean_line[!is.na(clean_line)]
+        if(length(clean_line) >0){
+          if(grepl("/",clean_line[1])){
+            skip_line = TRUE
+            if(skip_line){
+              rlog::log_info(paste("found comment line:"))
+            }
+          } else{
+            for(item in 1:length(clean_line)){
+              if(clean_line[item] == "{" ){
+                rlog::log_info(paste("OPEN_BRACKET_LINE:",process_lines[j]))
+                my_left_braces = c(my_left_braces,"{")
+              }
+              if(clean_line[item] == "}" ){
+                rlog::log_info(paste("CLOSED_BRACKET_LINE:",process_lines[j]))
+                my_right_braces = c(my_right_braces,"}")
+              }
+            }
+          }
+        }
+      }
+      modProcessLines[[process_name]] = processLines[[process_name]]
+      if(length(my_left_braces) > length(my_right_braces)){
+        braces_to_add = length(my_left_braces) - length(my_right_braces)
+        rlog::log_info(paste("Adding braces to:",process_name))
+        for(bta in 1:braces_to_add){
+          process_lines  = c(process_lines,"}")
+        }
+        modProcessLines[[process_name]][["process_lines"]] = process_lines
+      } else if(length(my_right_braces) > length(my_left_braces)){
+        rlog::log_error(paste("Whoa! There's too many closed braces '}'"))
+      }
+    }
+  }
+  return(modProcessLines)
+}
+#################
+statement_prefixes  = c('if','when','def','else','else if')
+loadModuleMetadata <- function(config_files){
+  modulesMetadata = list()
+  statement_left_brackets = c()
+  statement_right_brackets = c()
+  for(i in 1:length(config_files)){
+    config_file_dat = read.delim(config_files[i],header=F,quote="")
+    in_module_closure = FALSE
+    in_process_closure = FALSE
+    in_expression = FALSE
+    condition_for_config = "default"
+    parameter_name = "unknown"
+    value_collection = c()
+    for(j in 1:nrow(config_file_dat)){
+      skip_line = FALSE
+      line_split = strsplit(config_file_dat[j,],"\\s+")[[1]]
+      clean_line = line_split
+      for(k in 1:length(line_split)){
+        clean_line[k] = trimws(line_split[k])
+      }
+      clean_line = clean_line[clean_line!=""]
+      clean_line = clean_line[!is.na(clean_line)]
+      if(length(clean_line) >0){
+        if(grepl("/",clean_line[1])){
+          skip_line = TRUE
+          if(skip_line){
+            rlog::log_info(paste("Found comment line:",config_file_dat[j,]))
+          }
+        } else{
+          rlog::log_info(paste("CONFIG_LINE_OF_INTEREST:",config_file_dat[j,]))
+          rlog::log_info(paste("PROCESS_CLOSURE:",in_process_closure))
+          rlog::log_info(paste("MODULE_CLOSURE:",in_module_closure))
+          rlog::log_info(paste("CLEANED_LINE:",paste(clean_line,collapse=" ")))
+          if(clean_line[1] == "process"){
+            in_process_closure = TRUE
+          } else if(clean_line[1] %in% statement_prefixes){
+            rlog::log_info(paste("IN_EXPRESSION",paste(clean_line,collapse=" ")))
+            in_expression = TRUE
+            statement_left_brackets = c()
+            statement_right_brackets = c()
+            right_brackets_to_add = unlist(str_extract_all(clean_line, "\\}"))
+            if(length(right_brackets_to_add) >0){
+              statement_right_brackets = c(statement_right_brackets,right_brackets_to_add)
+            }
+            left_brackets_to_add = unlist(str_extract_all(clean_line, "\\{"))
+            if(length(left_brackets_to_add) >0){
+              statement_left_brackets = c(statement_left_brackets,left_brackets_to_add)
+            }
+            if(clean_line[1] == "if" || clean_line[1] == "else" || clean_line[1] == "else if"){
+              condition_for_config = paste(clean_line,collapse =" ")
+            }
+            ### check if we've exited the expression
+           # if(clean_line[length(clean_line)] == "}" || grepl("\\{$",clean_line[length(clean_line)])){
+            if(length(statement_right_brackets) >0 || length(statement_left_brackets) > 0){
+              rlog::log_info(paste("right brackets:",paste(statement_right_brackets,collapse=", ")))
+              rlog::log_info(paste("left brackets:",paste(statement_left_brackets,collapse=", ")))
+              if(length(statement_right_brackets) == length(statement_left_brackets)){
+                in_expression = FALSE
+                statement_left_brackets = c()
+                statement_right_brackets = c()
+                rlog::log_info(paste("EXITING_EXPRESSION"))
+              }
+            }
+          #  }
+          } else if(in_process_closure && clean_line[1] == "withName:" ){
+            in_module_closure = TRUE
+            module_name = gsub("\\'","",trimws(clean_line[2]))
+            rlog::log_info(paste("Initializing info for module:",module_name,"condition:",condition_for_config))
+            modulesMetadata[[module_name]] = list()
+            modulesMetadata[[module_name]][[condition_for_config]] = list()
+            moduleMetadata = list()
+          } else if(in_process_closure && clean_line[1] == "if" && in_expression){
+            condition_for_config = config_file_dat[j,]
+            right_brackets_to_add = unlist(str_extract_all(clean_line, "\\}"))
+            if(length(right_brackets_to_add) >0){
+              statement_right_brackets = c(statement_right_brackets,right_brackets_to_add)
+            }
+            left_brackets_to_add = unlist(str_extract_all(clean_line, "\\{"))
+            if(length(left_brackets_to_add) >0){
+              statement_left_brackets = c(statement_left_brackets,left_brackets_to_add)
+            }
+            rlog::log_info(paste("Found conditional configurations for module:",condition_for_config))
+          } else if(in_process_closure && in_module_closure && length(value_collection) > 0 && clean_line[1] != "]"){
+            if("=" %in% clean_line){
+              if(parameter_name != "unknown"){
+                rlog::log_info(paste("Point3 : Found value for parameter:",parameter_name,"value:",value_collection))
+                moduleMetadata[[parameter_name]] = value_collection
+                value_collection = c()
+                parameter_name = clean_line[1]
+                parameter_name_split = strsplit(parameter_name,"\\.")[[1]]
+                if(parameter_name_split[1] == "ext"){
+                  parameter_name = paste("process.",parameter_name,sep="")
+                }
+              }
+              if(!"]" %in% clean_line){
+                value_collection = paste(clean_line[3:length(clean_line)],collapse="")
+                value_collection = gsub("\\{","",value_collection)
+                value_collection = gsub("\\}","",value_collection)
+                if(value_collection != "["){
+                  if(parameter_name != "unknown"){
+                    rlog::log_info(paste("Point1 : Found value for parameter:",parameter_name,"value:",value_collection))
+                    moduleMetadata[[parameter_name]] = value_collection
+                    value_collection = c()
+                  }
+                }
+              }
+            } else{
+              value_collection = c(value_collection,paste(clean_line,collapse=" "))
+            }
+          } else if(in_process_closure && in_module_closure && length(value_collection) > 0 && clean_line[1] == "]"){
+            if(sum(grepl("join",clean_line)) > 0){
+              value_collection = c(value_collection,paste(clean_line,collapse=" "))
+            }            
+            value_collection = paste(value_collection,collapse=" ")
+            value_collection = strsplit(value_collection,"\\]\\,\\[")[[1]]
+            value_collection = apply(t(value_collection),2, function(x) gsub("\\[","",x))
+            if(parameter_name != "unknown"){
+              rlog::log_info(paste("Point2 : Found value for parameter:",parameter_name,"value:",value_collection))
+              moduleMetadata[[parameter_name]] = value_collection
+              value_collection = c()
+            }
+          } else if(in_process_closure && in_module_closure && (clean_line[1] == "}"  || grepl("\\}$",clean_line[length(clean_line)]))){
+            in_module_closure = FALSE
+            modulesMetadata[[module_name]][[condition_for_config]] = moduleMetadata
+            rlog::log_info(paste("Updating info for module:",module_name,"condition:",condition_for_config))
+          } else if(in_process_closure && in_module_closure && clean_line[1] == "]" ){
+            rlog::log_info(paste("Skipping line"))
+          } else if(in_process_closure && in_module_closure && "=" %in% clean_line){
+            parameter_name = clean_line[1]
+            parameter_name_split = strsplit(parameter_name,"\\.")[[1]]
+            if(parameter_name_split[1] == "ext"){
+              parameter_name = paste("process.",parameter_name,sep="")
+            }
+            if(parameter_name == "publishDir"){
+              value_collection = c(value_collection,paste(clean_line[3:length(clean_line)],collapse=" "))
+            } else{
+              value_collection = paste(clean_line[3:length(clean_line)],collapse="")
+              value_collection = gsub("\\{","",value_collection)
+              value_collection = gsub("\\}","",value_collection)
+              if(value_collection != "["){
+                if(parameter_name != "unknown"){
+                  rlog::log_info(paste("Point1 : Found value for parameter:",parameter_name,"value:",value_collection))
+                  moduleMetadata[[parameter_name]] = value_collection
+                  value_collection = c()
+                }
+              }
+            }
+          } else if(in_process_closure && !in_module_closure && (clean_line[1] == "}" || grepl("\\}$",clean_line) )){
+            in_process_closure = FALSE
+            rlog::log_info(paste("Exiting process closure"))
+          } else if(!in_process_closure && !in_module_closure && in_expression){
+            rlog::log_info(paste("Checking expression closure"))
+            right_brackets_to_add = unlist(str_extract_all(clean_line, "\\}"))
+            if(length(right_brackets_to_add) >0){
+              statement_right_brackets = c(statement_right_brackets,right_brackets_to_add)
+            }
+            left_brackets_to_add = unlist(str_extract_all(clean_line, "\\{"))
+            if(length(left_brackets_to_add) >0){
+              statement_left_brackets = c(statement_left_brackets,left_brackets_to_add)
+            }
+            ### check if we've exited the expression
+         #   if(clean_line[length(clean_line)] == "}" || grepl("\\{$",clean_line[length(clean_line)])){
+            if(length(statement_right_brackets) > 0 || length(statement_left_brackets) > 0){
+              rlog::log_info(paste("right brackets:",paste(statement_right_brackets,collapse=", ")))
+              rlog::log_info(paste("left brackets:",paste(statement_left_brackets,collapse=", ")))
+              if(length(statement_right_brackets) == length(statement_left_brackets)){
+                in_expression = FALSE
+                statement_left_brackets = c()
+                statement_right_brackets = c()
+                rlog::log_info(paste("EXITING_EXPRESSION"))
+              }
+            }
+          #  }
+          }
+        }
+      }
+    }
+  }
+  return(modulesMetadata)
+}
+############
+#x = loadModuleMetadata("/Users/keng/codes/mycosnp-nf/conf/modules.config")
+#y = loadModuleMetadata("/Users/keng/nf-core/rnaseq/conf/modules.config")
+findModules <- function(nf_file){
+  modules_of_interest = list()
+  nf_file_dat = read.delim(nf_file,header=F,quote="")
+  file_mappings = find_all_nf_scripts(nf_file)
+  relative_files = names(file_mappings[["scripts_rename"]])
+  full_file_names = file_mappings[["scripts_to_look_at"]]
+  for(j in 1:nrow(nf_file_dat)){
+    skip_line = FALSE
+    line_split = strsplit(nf_file_dat[j,],"\\s+")[[1]]
+    clean_line = line_split
+    for(k in 1:length(line_split)){
+      clean_line[k] = trimws(line_split[k])
+    }
+    clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
+    if(length(clean_line) >0){
+      if(grepl("/",clean_line[1])){
+        skip_line = TRUE
+        if(skip_line){
+          rlog::log_info(paste("Found comment line:",nf_file_dat[j,]))
+        }
+      } else{
+        if(clean_line[1] == "include"){
+          rlog::log_info(paste("Found line of interest:",nf_file_dat[j,]))
+          include_statement = str_extract(nf_file_dat[j,], "(?<=\\{)[^\\}]+")
+          include_statement = apply(t(include_statement), 2, function(elem) strsplit(elem,"\\s+")[[1]])
+          include_statement = apply(t(include_statement), 2, function(elem) trimws(elem))
+          include_statement = include_statement[include_statement!=""]
+          include_statement = include_statement[!is.na(include_statement)]
+          rlog::log_info(paste("INCLUDE_STATEMENT:",paste(include_statement,collapse=" ")))
+          relative_file_path = strsplit(nf_file_dat[j,],"\\s+")[[1]]
+          relative_file_path = relative_file_path[length(relative_file_path)]
+          #if(!grepl(".nf$",relative_file_path)){
+          #  relative_file_path = paste(relative_file_path,".nf",sep="")
+          #}
+          rlog::log_info(paste("Relative_FILE_PATH:",relative_file_path))
+          if(length(include_statement) > 1){
+            for(k in 1:(length(include_statement)-1)){
+              if(include_statement[k + 1] == "as"){
+                rlog::log_info(paste("FOUND:", paste(file_mappings[[relative_file_path]],collapse=",",sep=" ")))
+                modules_of_interest[[include_statement[k + 2]]][["line_number"]] = j
+                modules_of_interest[[include_statement[k + 2]]][["module_path"]] = file_mappings[[relative_file_path]]
+                modules_of_interest[[include_statement[k + 2]]][["original_module_name"]] = include_statement[k]
+              }
+            }
+          } else{
+            modules_of_interest[[include_statement[1]]][["line_number"]] = j
+            modules_of_interest[[include_statement[1]]][["module_path"]] = file_mappings[[relative_file_path]]
+          }
+        } else{
+          if(clean_line[1] %in% names(modules_of_interest)){
+            modules_of_interest[[clean_line[1]]][["line_number"]]  = c(modules_of_interest[[clean_line[1]]][["line_number"]] ,j)
+          }
+        }
+        
+      }
+    } else{
+      rlog::log_info(paste("Skipping",nf_file_dat[j,]))
+    }
+  }
+  return(modules_of_interest)
+}
+######################################
+#z  = findModules("/Users/keng/codes/mycosnp-nf/workflows/mycosnp.nf")
+#z1 = findModules("/Users/keng/nf-core/rnaseq/workflows/rnaseq.nf")
+##########################################################
+publishStatementCheck <- function(process_lines){
+  publishDir_statement_exists = FALSE
+  for(i in 1:length(process_lines)){
+    if("publishDir" %in% process_lines[i]){
+      publishDir_statement_exists = TRUE
+    }
+  }
+  return(publishDir_statement_exists)
+}
+
+addPublishStatement <- function(process_lines){
+  new_process_lines = process_lines
+  does_publish_statement_exist = publishStatementCheck(process_lines)
+  publish_dir_statement = 'publishDir path: { \"${params.outdir_custom}\" },mode: \"${params.publish_dir_mode}\",saveAs: { filename -> filename.equals(\'versions.yml\') ? null : filename }'
+  if(!does_publish_statement_exist){
+    new_process_lines = c(new_process_lines[1],publish_dir_statement,new_process_lines[2:length(new_process_lines)])
+  }
+  return(new_process_lines)
+}
+############################################
+orginalModuleMapper <- function(module_list){
+  og_mapper = list()
+  for(i in 1:length(names(module_list))){
+    if("original_module_name" %in% names(module_list[[names(module_list)[i]]]) ){
+      og_module = module_list[[names(module_list)[i]]][["original_module_name"]]
+    } else{
+      og_module = names(module_list)[i]
+    }
+    if(length(names(og_mapper))>0){
+      if(og_module %in% names(og_mapper)){
+        og_mapper[[og_module]] = c(og_mapper[[og_module]],names(module_list)[i])
+      } else{
+        og_mapper[[og_module]] = names(module_list)[i]
+      }
+    } else{
+      og_mapper[[og_module]] = names(module_list)[i]
+    }
+  }
+  return(og_mapper)
+}
+simplifyExpression <- function(groovy_expression){
+  just_groovy_expression = str_extract(groovy_expression, "(?<=\\{)[^\\}]+")
+  return(just_groovy_expression)
+}
+getCustomOutdirName <- function(module_name){
+  outdir_base = '${params.outdir}'
+  additional_dir_path = paste(rev(strsplit(tolower(module_name),"[-_]")[[1]]),collapse="/")
+  return(paste(outdir_base,additional_dir_path,sep="/"))
+}
+
+# if module has just one avatar or multiple avatars, then add publish statement and add params.outdir_custom to the appropriate line(s) in the
+# intermediate data structure : dictionary of line edits where key is line# and the value is line edits
+# inputs:
+# output from findModules
+# for each module grab process lines and add publishstatement
+    # - dictionary of process lines
+    # - pass this dictionary to addPublishStatement function
+# output: new_lines
+moduleNameMatcher <- function(module_metadata,query_name){
+  names_of_interest = names(module_metadata)
+  name_of_interest = NULL
+  for(i in 1:length(names_of_interest)){
+    module_name = names_of_interest[i]
+    match_found  = FALSE
+    if(grepl("|",module_name)){
+      module_names = strsplit(module_name,"\\|")[[1]]
+      for(j in 1:length(module_names)){
+        if(match_found){
+          break
+        }
+        if(!is.na(str_extract(module_names[j],".*"))){
+          name_stub = gsub("\\.\\*","",module_name)
+          if(name_stub != ""){
+            if(grepl(name_stub,query_name)){
+              name_of_interest = module_name
+              match_found = TRUE
+            }
+          }
+        } else{
+          if(module_names[j] == query_name){
+            name_of_interest = module_name
+            match_found = TRUE
+          }
+        }
+      }
+    } else if(grepl(":",module_name)){
+      module_names = strsplit(module_name,":")[[1]]
+      module_names = c(module_names[length(module_names)])
+      for(j in 1:length(module_names)){
+        if(!is.na(str_extract(module_names[j],".*"))){
+          name_stub = gsub("\\.\\*","",module_name)
+          if(name_stub != ""){
+            if(grepl(name_stub,query_name)){
+              name_of_interest = module_name
+              match_found = TRUE
+            }
+          }
+        } else{
+          if(module_names[j] == query_name){
+            name_of_interest = module_name
+            match_found = TRUE
+          }
+        }
+      }
+    } else{
+      if(module_name == query_name){
+        name_of_interest = module_name
+        match_found = TRUE
+      }
+    }
+  }
+  return(name_of_interest)
+}
+############################
+makeFinalEdits <- function(nf_script,module_metadata,module_location){
+  new_lines = c()
+  new_lines = t(read.delim(nf_script,header=F,quote=""))
+  line_edits = list()
+  modules_of_interest = names(module_location)
+  configurations_to_ignore = c("publishDir","errorStrategy","cpus","memory")
+  for(i in 1:length(modules_of_interest)){
+    module_of_interest = modules_of_interest[i]
+    lines_to_add = c()
+    # add publish statement and add params.outdir_custom to the appropriate line(s) in the new_lines
+    line_numbers_of_interest = module_location[[module_of_interest]][["line_number"]]
+    module_script = module_location[[module_of_interest]][["module_path"]]
+    module_lines = t(read.delim(module_script,header=F,quote=""))
+    module_lines1 = addPublishStatement(module_lines)
+    ###########################################
+    if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
+      updated_module_script = gsub(".nf$",".dev.nf",module_script)
+      write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
+      rlog::log_info(paste("Generated updated module script to:",updated_module_script))
+      system(paste("cp",updated_module_script,module_script))
+    }
+    publish_dir_statement = paste("params.outdir_custom","=", getCustomOutdirName(module_of_interest))
+    lines_to_add = c(lines_to_add,publish_dir_statement)
+    module_name_for_configuration = moduleNameMatcher(module_metadata,module_of_interest)
+    if(is.null(module_name_for_configuration)){
+      rlog::log_info(paste("Not adding additional configuration for:",module_of_interest,"in",nf_script))
+    } else{
+      rlog::log_info(paste("Checking",module_name_for_configuration,"for additional params"))
+      configuration_scenarios = names(module_metadata[[module_name_for_configuration]])
+      for(k in 1:length(configuration_scenarios)){
+        configuration_parameters = names(module_metadata[[module_name_for_configuration]][[configuration_scenarios[k]]])
+        configuration_parameters = configuration_parameters[!configuration_parameters %in% configurations_to_ignore]
+        if(length(configuration_parameters) > 0 ){
+          rlog::log_info(paste("Found the additional configuration parameters: ",paste(configuration_parameters,collapse = ", "),"for:",configuration_scenarios[k]))
+          if(configuration_scenarios[k] != "default"){
+            lines_to_add = c(lines_to_add,configuration_scenarios)
+            for(k1 in 1:length(configuration_parameters)){
+              parameter_value = module_metadata[[module_name_for_configuration]][[configuration_scenarios[k]]][[configuration_parameters[k1]]]
+              if(length(parameter_value) > 1){
+                parameter_value = paste(parameter_value , collapse = " ")
+              }
+              lines_to_add = c(lines_to_add,paste("\t",configuration_parameters[k1],"=",parameter_value))
+            }
+            lines_to_add = c(lines_to_add,"}")
+            
+          } else{
+            for(k1 in 1:length(configuration_parameters)){
+              parameter_value = module_metadata[[module_name_for_configuration]][[configuration_scenarios[k]]][[configuration_parameters[k1]]]
+              if(length(parameter_value) > 1){
+                parameter_value = paste(parameter_value , collapse = " ")
+              }
+              lines_to_add = c(lines_to_add,paste(configuration_parameters[k1],"=",parameter_value))
+            }
+          }
+        }
+      }
+    }
+    rlog::log_info(paste("Adding lines:",paste(lines_to_add,collapse="\n")))
+    rlog::log_info(paste("Line numbers to modify:",paste(line_numbers_of_interest[2:length(line_numbers_of_interest)],collapse = ", ")))
+    line_number_key = line_numbers_of_interest[2:length(line_numbers_of_interest)]
+    if(length(line_number_key) >1) {
+      rlog::log_warn(paste("Not sure how to perform edits for:",module_of_interest,nf_script,"Skipping edits."))
+    } else{
+      line_edits[[line_number_key]] = lines_to_add
+    }
+  }
+  #########################
+  for(lidx in 1:length(new_lines)){
+    if(toString(lidx + 1) %in% names(line_edits)){
+      new_lines[lidx] = paste(new_lines[lidx],line_edits[[toString(lidx + 1)]],collapse="\n")
+    }
+  }
+  updated_nf_script = gsub(".nf$",".final_edits.nf",nf_script)
+  rlog::log_info(paste("Writing out final edits to :",updated_nf_script))
+  write.table(x=new_lines,file=updated_nf_script,quote=F,row.names=F,col.names=F)
+  system(paste("cp",updated_nf_script,nf_script))
+}
+
+
+
+
+
+
+

@@ -1,5 +1,6 @@
 options(stringsAsFactors=FALSE)
 suppressPackageStartupMessages(library("argparse"))
+source('parameter_xml_utils.R')
 library(rlog)
 library(rjson)
 library(stringr)
@@ -74,6 +75,8 @@ if(workflow_language == "cwl"){
 } else if(workflow_language == "nextflow"){
   main_script = args$nextflow_script
 }
+ica_pipeline_launch_cmd = c("icav2 projectpipelines",workflow_language,"start",pipeline_name)
+ica_pipeline_launch_cmd_global_flags = c("-k",paste("'",api_key,"'",sep=""))
 #######################
 additional_files = args$project_directory
 files_to_add = list()
@@ -170,6 +173,7 @@ if(is.null(ica_project_id) && is.null(ica_project_name)){
   } else{
     stop(paste("Please provide a valid project name [",ica_project_name,"]\nFound",paste(ica_project_lookup_table[,1],collapse=", ")))
   }
+  ica_pipeline_launch_cmd_global_flags = c(ica_pipeline_launch_cmd_global_flags,"--project-id",ica_project_id)
 }
 
 if(is.null(comments) && is_nf_core){

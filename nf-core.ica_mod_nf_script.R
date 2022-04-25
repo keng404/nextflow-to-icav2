@@ -26,6 +26,8 @@ parser$add_argument("-u","--instance-type-url","--instance_type_url", default="h
                     help = "URL that contains ICA instance type table")
 parser$add_argument("-d","--default-instance","--default_instance", default = "himem-small",
                     help = "default instance value")
+parser$add_argument("-a","--modules-config-file","--modules_config_file", default = NULL,
+                    help = "configuration file for modules of a pipeline")
 parser$add_argument("-m","--dummy-docker-image","--dummy_docker_image", default = "library/ubuntu:21.04",
                     help = "default Docker image to copy intermediate and report files from ICA")
 parser$add_argument("-t","--intermediate-copy-template","--intermediate_copy_template", default = "copy_workfiles.nf",
@@ -156,7 +158,7 @@ getParamsFromConfig <- function(conf_data){
     } else if (!line_skip && !grepl("def",conf_data[i,]) && !grepl("if",conf_data[i,])  && !grepl("else",conf_data[i,])){
       if(grepl("params\\.",conf_data[i,]) && grepl("\\=",conf_data[i,]) && !grepl("\\(params",conf_data[i,])  && !grepl("\\{params",conf_data[i,]) ){
         modified_line = conf_data[i,]
-        modified_line = gsub("params\\.","",conf_data[i,])
+        #modified_line = gsub("params\\.","",conf_data[i,])
         rlog::log_info(paste("ADDING_LINE_STRIPPING_PARAMS:",modified_line))
         lines_to_keep = c(lines_to_keep,modified_line)
       }
@@ -247,6 +249,27 @@ if(length(configs_to_ignore) > 0){
 final_config_list = c()
 if(length(z1) > 0){
   final_config_list = localConfigOrNot(paramsFiller(list_to_fill=z1,params_list=z))
+}
+
+#############################
+#### for DSL2 workflows ... find module config file and load in the configruation metadata.
+#### For now we hard-code 'modules.config' by nf-core convention .... may expose this as command-line parameter
+############################################
+modules_config_file = NULL
+modules_config = list()
+is_module_config_file = apply(t(z1),2,function(elem) basename(elem) == "modules.config")
+if(args$dsl2_enabled){
+  if(sum(is_module_config_file) > 0 ){
+    if(is.null(args$modules_config_file)){
+      modules_config_file = z1[is_module_config_file]
+    } else{
+      modules_config_file = args$modules_config_file
+    }
+    source('dsl2_compatible_parser.R')
+    modules_config = loadModuleMetadata(modules_config_file)
+  } else{
+    rlog::log_info(paste("Could not find MODULES_CONFIG_FILE.\nSkipping the module configuration edits\n"))
+  }
 }
 #paramsFiller(list_to_fill=z1,params_list=z)
 
@@ -548,9 +571,10 @@ if(length(parameter_edits) > 0 ){
       }
       ### break down param name and check that the param is properly initialized
     } else{
-      if(!args$dsl2_enabled){
-        new_name = gsub("params\\.","",new_name)
-      }
+      print("hello")
+      #if(!args$dsl2_enabled){
+      #  new_name = gsub("params\\.","",new_name)
+      #}
     }
     expressions_to_add = c()
     if(grepl("false",y[[names(parameter_edits)[i]]])){
@@ -559,6 +583,10 @@ if(length(parameter_edits) > 0 ){
     logical_values = y[[names(parameter_edits)[i]]] != "null" && y[[names(parameter_edits)[i]]] != "true" && y[[names(parameter_edits)[i]]] != "false"
     other_conditions = grepl("/",y[[names(parameter_edits)[i]]])  
     must_have_condition = !grepl("'",y[[names(parameter_edits)[i]]])  
+    rlog::log_info(paste("param_name:",names(parameter_edits)[i],"logical_values:",logical_values,"other_conditions:",other_conditions,"must_have_condition:",must_have_condition))
+    if(is.na(logical_values)){
+      next
+    }
     dangling_single_quote  =str_extract_all(y[[names(parameter_edits)[i]]],"\"")[[1]]
     dangling_double_quote  =str_extract_all(y[[names(parameter_edits)[i]]],"'")[[1]]
     if(must_have_condition && (logical_values || other_conditions)){
@@ -979,6 +1007,7 @@ grabProcessMetadataFromConfigs <- function(conf_files,AllParams,default_config){
         clean_line[t] = sanitized_token
       }
       clean_line = clean_line[clean_line!=""]
+      clean_line = clean_line[!is.na(clean_line)]
       if(grepl("/",clean_line[1])){
         skip_line = TRUE
       } else if(clean_line[1]=="process" && grepl("\\{",conf_data[l,])){
@@ -1110,6 +1139,7 @@ getDefaultContainer <- function(config_file){
         clean_line[j] = trimws(line_split[j])
       }
       clean_line = clean_line[clean_line!=""]
+      clean_line = clean_line[!is.na(clean_line)]
       defaultContainer = clean_line[3]
     }
   }
@@ -1306,6 +1336,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
       clean_line[j] = trimws(line_split[j])
     }
     clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
     if(grepl("/",clean_line[1])){
       skip_line = TRUE
     } else{
@@ -1331,6 +1362,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
       clean_line[j] = trimws(line_split[j])
     }
     clean_line = clean_line[clean_line!=""]
+    clean_line = clean_line[!is.na(clean_line)]
     clean_line_length = length(clean_line)
     if(grepl("/",clean_line[1])){
       skip_line = TRUE
@@ -1403,10 +1435,9 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             rlog::log_info(paste("PROCESS_LABEL:",process_label))
             process_labels = c(process_labels,process_label)
           }
-          if(clean_line[1] == "input:" || clean_line[1] == "when:"){
+          if(clean_line[1] == "input:"){
             process_has_input = TRUE
             line_indent = gsub("input:","",nf_script_dat[i,])
-            line_indent = gsub("when:","",line_indent)
             rlog::log_info(paste("LINE_INDENT_FIRST_TOKEN:",line_indent))
             ############
             process_labels_exist = length(process_labels) > 0 
@@ -1509,8 +1540,9 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             process_lines = c(process_lines,paste(line_indent,paste("time","'1day'"),sep=""))
             rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
             process_lines = c(process_lines,nf_script_dat[i,])
-          } else if(clean_line[1] == "output:" && !process_has_input){
+          } else if((clean_line[1] == "output:"  || clean_line[1] == "when:") && !process_has_input){
             line_indent = gsub("output:","",nf_script_dat[i,])
+            line_indent = gsub("when:","",line_indent)
             rlog::log_info(paste("OUTPUT_LINE_INDENT_FIRST_TOKEN:",line_indent))
             ############
             process_labels_exist = length(process_labels) > 0 
@@ -1630,6 +1662,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
                 clean_line[j] = trimws(line_split[j])
               }
               clean_line = clean_line[clean_line!=""]
+              clean_line = clean_line[!is.na(clean_line)]
               clean_line_length = length(clean_line)
             line_indent = gsub("cpus","",nf_script_dat[i,])
             cpus = strtoi(clean_line[2])
@@ -1651,6 +1684,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
               clean_line[j] = trimws(line_split[j])
             }
             clean_line = clean_line[clean_line!=""]
+            clean_line = clean_line[!is.na(clean_line)]
             clean_line_length = length(clean_line)
             line_indent = gsub("memory","",nf_script_dat[i,])
             memory = strtoi(gsub("\\.GB","",clean_line[2]))
@@ -1780,6 +1814,7 @@ find_dummy_output_channel = function(process_list){
             clean_line[j] = trimws(line_split[j])
           }
           clean_line = clean_line[clean_line!=""]
+          clean_line = clean_line[!is.na(clean_line)]
           if(grepl("/",clean_line[1])){
             skip_line = TRUE
           } else{
@@ -1803,22 +1838,34 @@ find_dummy_output_channel = function(process_list){
 }
 ##########
 workflow_event_added_commands = read.delim(args$intermediate_copy_template,quote="",header=F)
+workflow_event_added_commandsv1 = c()
+for(wead_idx in 1:nrow(workflow_event_added_commands)){
+  workflow_event_added_commandsv1 = c(workflow_event_added_commandsv1,workflow_event_added_commands[wead_idx,])
+}
+workflow_event_added_commands = workflow_event_added_commandsv1
 workflow_events = c("workflow.onComplete","workflow.onError")
 ##############
+source('dsl2_compatible_parser.R')
 for(uidx in 1:length(scripts_to_check)){
   rlog::log_info(paste("Starting to parse:",scripts_to_check[uidx]))
   updated_nf_processes = parseProcessesInNextflowScript(nf_script=scripts_to_check[uidx],nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table,AllParams = y)
   #print(updated_nf_processes[["VEP"]])
+  #print(updated_nf_processes)
+
+  updated_nf_processes = processEnclosureCheck(updated_nf_processes)
   print(updated_nf_processes)
   malformed_processes(updated_nf_processes,scripts_to_check[uidx])
   ### add-in dummy process to copy back intermediate files and pipeline reports
-  source('dsl2_compatible_parser.R')
   nf_workflow_events = list()
   if(uidx == 1){
     rlog::log_info(paste("Grabbing workflow events from:",scripts_to_check[uidx]))
     nf_workflow_events = getWorkflowEvents(script = scripts_to_check[uidx])
     malformed_workflow_event_processes(nf_workflow_events,scripts_to_check[uidx])
     print(nf_workflow_events)
+  }
+  script_metadata = list()
+  if(args$dsl2_enabled){
+    script_metadata = find_all_nf_scripts(main_script=scripts_to_check[uidx])
   }
   ############
   ## check out the updated processes and the line #s. Keep what isn't a process-line # (i.e. line # defining a process)
@@ -1889,85 +1936,166 @@ for(uidx in 1:length(scripts_to_check)){
       }
     }
     ########################3
+    reharvested_lines = c()
+    new_lines = c()
     if(uidx == 1){
       rlog::log_info(paste("adding additional workflow event to:",scripts_to_check[uidx]))
       line_number_shift = length(second_pass_updated_lines) - nrow(updated_nf_dat)
+      rlog::log_info(paste("Initial line_number_shift:",line_number_shift))
       for(weidx in 1:length(workflow_events)){
         workflow_event = workflow_events[weidx]
-        if(length(nf_workflow_events) > 0 ){
-          if(workflow_event %in% names(nf_workflow_events)){
-            process_lines = nf_workflow_events[[workflow_event]][["process_lines"]]
-            line_numbers = nf_workflow_events[[workflow_event]][["line_numbers"]]
-            line_index_to_start = (line_numbers[1]-1) + line_number_shift
-            reharvested_lines = second_pass_updated_lines[1:line_index_to_start]
-            for(lidx in 1:(length(process_lines)-1)){
-              reharvested_lines = c(reharvested_lines,process_lines[lidx])
+    #if(length(workflow_events) > 0 ){
+        #for(weidx in 1:length(names(nf_workflow_events))){
+          #workflow_event = workflow_events[weidx]
+            if(workflow_event %in% names(nf_workflow_events)){
+              rlog::log_info(paste("workflow event found:",workflow_event))
+              process_lines = nf_workflow_events[[workflow_event]][["process_lines"]]
+              line_numbers = nf_workflow_events[[workflow_event]][["line_numbers"]]
+              line_index_to_start = (line_numbers[1]-1) + line_number_shift
+              rlog::log_info(paste("line_index_to_start:",line_index_to_start))
+              reharvested_lines = second_pass_updated_lines[1:line_index_to_start]
+              for(lidx in 1:(length(process_lines)-1)){
+                reharvested_lines = c(reharvested_lines,process_lines[lidx])
+              }
+              for(welidx in 1:length(workflow_event_added_commands)){
+                reharvested_lines = c(reharvested_lines,paste("\t",workflow_event_added_commands[welidx],sep="")) 
+              }
+             number_of_lines_to_add =  (length(process_lines)-1) + length(workflow_event_added_commands)
+             rlog::log_info(paste("number_of_lines_to_add:",number_of_lines_to_add + 1))
+              line_number_shift = line_number_shift + length(workflow_event_added_commands)
+              rlog::log_info(paste("adding existing workflow event lines:",workflow_event,"new_line_number_shift:",line_number_shift))
+              reharvested_lines = c(reharvested_lines,process_lines[length(process_lines)])
+              rlog::log_info(paste("initial_length_of_script:",length(second_pass_updated_lines),"length_of_new_script:",length(reharvested_lines)))
+              current_script_length = length(second_pass_updated_lines) 
+              ## add downstream lines if needed --- there mey be functions defined after the workflow.onComplete/onError directives
+              if(current_script_length > length(reharvested_lines)){
+                new_start_idx = length(reharvested_lines) -length(workflow_event_added_commands) + 1
+                for(ii in new_start_idx:current_script_length){
+                  reharvested_lines = c(reharvested_lines,second_pass_updated_lines[ii])
+                }
+              }
+            } else{
+              rlog::log_info(paste("workflow event not found:",workflow_event))
+              new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
+              second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
             }
-            for(welidx in 1:length(workflow_event_added_commands)){
-              reharvested_lines = c(reharvested_lines,workflow_event_added_commands[welidx]) 
-            }
-            line_number_shift = line_number_shift + length(workflow_event_added_commands)
-            reharvested_lines = c(reharvested_lines,process_lines[length(process_lines)])
-            second_pass_updated_lines = reharvested_lines
-          } else{
-            new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
-            second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
-          }
-        } else{
-          new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
-          second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
-        }
       }
-    }
+      #else{
+      #  rlog::log_info(paste("workflow event not found:",workflow_event))
+      #  new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
+      #  rlog::log_info(paste("adding new workflow event lines:",paste(new_lines,collapse="\n")))
+      #  reharvested_lines = c(reharvested_lines,new_lines)
+      #  }
+      if(length(reharvested_lines) > 0){
+        second_pass_updated_lines = reharvested_lines
+      }
+      #if(length(new_lines) > 0) {
+      #  second_pass_updated_lines  = c(second_pass_updated_lines,new_lines)
+      #  second_pass_updated_lines = unique(second_pass_updated_lines)
+      #}
+      }
+    
   } else{
     rlog::log_info(paste("No process update required for:",scripts_to_check[uidx]))
     updated_nf_dat =  read.delim(scripts_to_check[uidx],quote="",header=F)
     ############## initialize lines as the lines from the original file --- no modifications
-    second_pass_updated_lines = c()
+    second_pass_updated_linesv1 = c()
     for(line_index in 1:nrow(updated_nf_dat)){
-      second_pass_updated_lines = c(second_pass_updated_lines,updated_nf_dat[line_index,])
+      second_pass_updated_linesv1 = c(second_pass_updated_linesv1,updated_nf_dat[line_index,])
     }
+    second_pass_updated_lines = second_pass_updated_linesv1
+    reharvested_lines = c()
     #######################
+    reharvested_lines = c()
+    new_lines = c()
     if(uidx == 1){
       rlog::log_info(paste("adding additional workflow event to:",scripts_to_check[uidx]))
       line_number_shift = 0
+      found_workflow_event = FALSE
       for(weidx in 1:length(workflow_events)){
-        workflow_event = workflow_events[weidx]
-        if(length(nf_workflow_events) > 0 ){
-          if(workflow_event %in% names(nf_workflow_events)){
-            rlog::log_info(paste("workflow event found:",workflow_event))
-            process_lines = nf_workflow_events[[workflow_event]][["process_lines"]]
-            line_numbers = nf_workflow_events[[workflow_event]][["line_numbers"]]
-            line_index_to_start = (line_numbers[1]-1) + line_number_shift
-            reharvested_lines = second_pass_updated_lines[1:line_index_to_start]
-            rlog::log_info(paste("adding existing workflow event lines:",workflow_event,"number_of_lines:"))
-            for(lidx in 1:(length(process_lines)-1)){
-              reharvested_lines = c(reharvested_lines,process_lines[lidx])
+        ##if(length(workflow_events) > 0 ){
+        found_workflow_event = FALSE
+          workflow_event = workflow_events[weidx]
+          #for(weidx in 1:length(names(nf_workflow_events))){
+            rlog::log_info(workflow_event)
+            if(workflow_event %in% names(nf_workflow_events)){
+              found_workflow_event = TRUE
+              rlog::log_info(paste("workflow event found:",workflow_event))
+              process_lines = nf_workflow_events[[workflow_event]][["process_lines"]]
+              line_numbers = nf_workflow_events[[workflow_event]][["line_numbers"]]
+              line_index_to_start = (line_numbers[1]-1) + line_number_shift
+              rlog::log_info(paste("line_index_to_start:",line_index_to_start))
+              reharvested_lines = second_pass_updated_lines[1:line_index_to_start]
+              rlog::log_info(paste("adding existing workflow event lines:",workflow_event,"number_of_lines:"))
+              for(lidx in 1:(length(process_lines)-1)){
+                reharvested_lines = c(reharvested_lines,process_lines[lidx])
+              }
+              for(welidx in 1:length(workflow_event_added_commands)){
+                reharvested_lines = c(reharvested_lines,paste("\t",workflow_event_added_commands[welidx],sep="")) 
+              }
+              number_of_lines_to_add =  (length(process_lines)-1) + length(workflow_event_added_commands)
+              rlog::log_info(paste("number_of_lines_to_add:",number_of_lines_to_add + 1))
+              line_number_shift = line_number_shift + length(workflow_event_added_commands)
+              reharvested_lines = c(reharvested_lines,process_lines[length(process_lines)])
+              rlog::log_info(paste("initial_length_of_script:",length(second_pass_updated_lines),"length_of_new_script:",length(reharvested_lines)))
+              current_script_length = length(second_pass_updated_lines) 
+              ## add downstream lines if needed --- there mey be functions defined after the workflow.onComplete/onError directives
+              if(current_script_length > length(reharvested_lines)){
+                new_start_idx = length(reharvested_lines) -length(workflow_event_added_commands) + 1
+                for(ii in new_start_idx:current_script_length){
+                  reharvested_lines = c(reharvested_lines,second_pass_updated_lines[ii])
+                }
+              }
+            } else{
+              rlog::log_info(paste("workflow event not found:",workflow_event))
+              new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
+              rlog::log_info(paste("adding new workflow event lines:",paste(new_lines,collapse="\n")))
+              second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
             }
-            for(welidx in 1:length(workflow_event_added_commands)){
-              reharvested_lines = c(reharvested_lines,workflow_event_added_commands[welidx]) 
-            }
-            line_number_shift = line_number_shift + length(workflow_event_added_commands)
-            reharvested_lines = c(reharvested_lines,process_lines[length(process_lines)])
-            second_pass_updated_lines = reharvested_lines
-          } else{
-            rlog::log_info(paste("workflow event not found:",workflow_event))
-            new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
-            rlog::log_info(paste("adding new workflow event lines:",paste(new_lines,collapse="\n")))
-            second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
-          }
-          
-        } else{
-          rlog::log_info(paste("workflow event not found:",workflow_event))
-          new_lines = unlist(c(paste(workflow_event,"{"),workflow_event_added_commands,"}"))
-          rlog::log_info(paste("adding new workflow event lines:",paste(new_lines,collapse="\n")))
-          second_pass_updated_lines = c(second_pass_updated_lines,new_lines)
-        }
       }
+      if(length(reharvested_lines) > 0){
+        second_pass_updated_lines = reharvested_lines
+      }
+    #  if(length(new_lines) > 0) {
+    #    second_pass_updated_lines  = c(second_pass_updated_lines,new_lines)
+    #    second_pass_updated_lines = unique(second_pass_updated_lines)
+    #  }
     }
   }
+  
+  #if(length(script_metadata) > 0){
+  #  script_rename = script_metadata[["scripts_rename"]]
+  #  script_name_original = names(script_rename)
+  #  for(spul in 1:length(second_pass_updated_lines)){
+  #    for(sno in 1:length(script_name_original)){
+  #      if(grepl(script_name_original[sno],second_pass_updated_lines[spul])){
+  #        rlog::log_info(paste("Renaming",script_name_original[sno],"to",script_rename[[script_name_original[sno]]]))
+  #        second_pass_updated_lines[spul] = gsub(script_name_original[sno],script_rename[[script_name_original[sno]]],second_pass_updated_lines[spul])
+  #      }
+  #    }
+  #  }
+  #}
+  
   rlog::log_info(paste("Writing updated processes to",process_updated_nf_file))
+  rlog::log_info(paste("FINAL_NUMBER_OF_LINES:", length(second_pass_updated_lines)))
   write.table(x=second_pass_updated_lines,file=process_updated_nf_file,sep="\n",quote=F,row.names=F,col.names=F)
+  rlog::log_info(paste("Renaming_CMD:",paste("cp",process_updated_nf_file,scripts_to_check[uidx])))
+  system(paste("cp",process_updated_nf_file,scripts_to_check[uidx]))
+  ### check for null container map references
+  fixNullContainerMap(nf_script=scripts_to_check[uidx])
+  if(args$dsl2_enabled){
+    if(length(modules_config) > 0){
+      module_location = findModules(scripts_to_check[uidx])
+      if(length(module_location) > 0 ){
+        rlog::log_info(paste("ADDITIONAL_STEP: adding the proper module configurations based on:",modules_config_file))
+        makeFinalEdits(nf_script = scripts_to_check[uidx],module_metadata = modules_config,module_location = module_location)
+      } else{
+        rlog::log_info(paste("SKIPPING edits based on module configuration"))
+      }
+    } else{
+      rlog::log_info(paste("SKIPPING edits based on module configuration"))
+    }
+  }
 }
 ###############
 #################
