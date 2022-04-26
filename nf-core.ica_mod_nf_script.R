@@ -267,6 +267,8 @@ if(args$dsl2_enabled){
     }
     source('dsl2_compatible_parser.R')
     modules_config = loadModuleMetadata(modules_config_file)
+    rlog::log_info(paste("Found MODULES_CONFIG_FILE:",modules_config_file))
+    print(modules_config)
   } else{
     rlog::log_info(paste("Could not find MODULES_CONFIG_FILE.\nSkipping the module configuration edits\n"))
   }
@@ -1846,8 +1848,12 @@ workflow_event_added_commands = workflow_event_added_commandsv1
 workflow_events = c("workflow.onComplete","workflow.onError")
 ##############
 source('dsl2_compatible_parser.R')
+module_files = c()
 for(uidx in 1:length(scripts_to_check)){
   rlog::log_info(paste("Starting to parse:",scripts_to_check[uidx]))
+  if(sum("modules" %in% strsplit(scripts_to_check[uidx],"/")[[1]]) > 0) {
+    module_files = c(module_files,scripts_to_check[uidx])
+  }
   updated_nf_processes = parseProcessesInNextflowScript(nf_script=scripts_to_check[uidx],nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table,AllParams = y)
   #print(updated_nf_processes[["VEP"]])
   #print(updated_nf_processes)
@@ -2084,10 +2090,11 @@ for(uidx in 1:length(scripts_to_check)){
   ### check for null container map references
   fixNullContainerMap(nf_script=scripts_to_check[uidx])
   if(args$dsl2_enabled){
-    if(length(modules_config) > 0){
-      module_location = findModules(scripts_to_check[uidx])
-      if(length(module_location) > 0 ){
-        rlog::log_info(paste("ADDITIONAL_STEP: adding the proper module configurations based on:",modules_config_file))
+    if(length(names(modules_config)) > 0){
+      module_location = findModules(nf_file=scripts_to_check[uidx])
+      print(module_location)
+      if(length(names(module_location)) > 0 ){
+        rlog::log_info(paste("ADDITIONAL_STEP:",scripts_to_check[uidx], "adding the proper module configurations based on:",modules_config_file))
         makeFinalEdits(nf_script = scripts_to_check[uidx],module_metadata = modules_config,module_location = module_location)
       } else{
         rlog::log_info(paste("SKIPPING edits based on module configuration"))
@@ -2098,6 +2105,28 @@ for(uidx in 1:length(scripts_to_check)){
   }
 }
 ###############
+if(length(module_files) > 0){
+  source('dsl2_compatible_parser.R')
+  for(i in 1:length(module_files)){
+    mfoi = module_files[i]
+    mfoi_lines = t(read.delim(mfoi,header=F,quote=""))
+    mfoi_lines1 = c()
+    for(j in 1:length(mfoi_lines)){
+      mfoi_lines_split = strsplit(mfoi_lines[j],"\\s+")[[1]]
+      if(!"publishDir" %in% mfoi_lines_split){
+       mfoi_lines1 = c(mfoi_lines1,mfoi_lines[j]) 
+      }
+    }
+    module_lines1 = addPublishStatement(mfoi_lines1)
+    ###########################################
+    #if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
+    updated_module_script = gsub(".nf$",".dev.nf",mfoi)
+    print(module_lines1)
+    write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
+    rlog::log_info(paste("Generated final updated module script to:",updated_module_script))
+    system(paste("cp",updated_module_script,mfoi))
+  }
+}
 #################
 #STEP4: Check for file_paths based-off the parameter XML file to ensure that they are
 # wrapped by file(myChannel1)

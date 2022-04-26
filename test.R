@@ -82,6 +82,7 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     # add publish statement and add params.outdir_custom to the appropriate line(s) in the new_lines
     line_numbers_of_interest = module_location[[module_of_interest]][["line_number"]]
     module_script = module_location[[module_of_interest]][["module_path"]]
+    rlog::log_info(paste("Investigating :",module_script))
     module_lines = t(read.delim(module_script,header=F,quote=""))
     module_lines1 = addPublishStatement(module_lines)
     ###########################################
@@ -89,10 +90,16 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
       updated_module_script = gsub(".nf$",".dev.nf",module_script)
       write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
       rlog::log_info(paste("Generated updated module script to:",updated_module_script))
-      system(paste("cp",updated_module_script,module_script))
+     # system(paste("cp",updated_module_script,module_script))
     }
-    publish_dir_statement = paste("params.outdir_custom","=", getCustomOutdirName(module_of_interest))
-    lines_to_add = c(lines_to_add,publish_dir_statement)
+    publish_dir_statement = paste("params.outdir_custom","=", paste("\"",getCustomOutdirName(module_of_interest),"\"",sep=""))
+    if(length(grepl("\\{$",lines_to_add[length(lines_to_add)])) == 0){
+      lines_to_add = c(lines_to_add,publish_dir_statement)
+    } else if(!grepl("\\{$",lines_to_add[length(lines_to_add)])){
+      lines_to_add = c(lines_to_add,publish_dir_statement)
+    } else{
+      lines_to_add = c(lines_to_add,c("\n",paste("\t",publish_dir_statement)))
+    }
     module_name_for_configuration = moduleNameMatcher(module_metadata,module_of_interest)
     if(is.null(module_name_for_configuration)){
       rlog::log_info(paste("Not adding additional configuration for:",module_of_interest,"in",nf_script))
@@ -133,19 +140,24 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     if(length(line_number_key) >1) {
       rlog::log_warn(paste("Not sure how to perform edits for:",module_of_interest,nf_script,"Skipping edits."))
     } else{
-      line_edits[[line_number_key]] = lines_to_add
+      line_edits[[toString(line_number_key)]] = lines_to_add
     }
   }
+  #wprint(line_edits)
   #########################
   for(lidx in 1:length(new_lines)){
     if(toString(lidx + 1) %in% names(line_edits)){
-      new_lines[lidx] = paste(new_lines[lidx],line_edits[[toString(lidx + 1)]],collapse="\n")
+      if(!is.null(line_edits[[toString(lidx + 1)]])){
+        rlog::log_info(paste("ADDDING_NEW_LINES:",paste(new_lines[lidx],line_edits[[toString(lidx + 1)]],collapse="\n")))
+        #new_lines[lidx] = paste(new_lines[lidx],paste(line_edits[[toString(lidx + 1)]],collapse="\n"),collapse="\n")
+        new_lines[lidx] =  paste(line_edits[[toString(lidx + 1)]],collapse="\n")
+      }
     }
   }
   updated_nf_script = gsub(".nf$",".final_edits.nf",nf_script)
   rlog::log_info(paste("Writing out final edits to :",updated_nf_script))
-  write.table(x=new_lines,file=updated_nf_script,quote=F,row.names=F,col.names=F)
+  write.table(x=new_lines,file=updated_nf_script,sep="\n",quote=F,row.names=F,col.names=F)
   system(paste("cp",updated_nf_script,nf_script))
 }
 
-#makeFinalEdits("/Users/keng/nf-core/rnaseq/workflows/rnaseq.nf",y,z1)
+makeFinalEdits("/Users/keng/nf-core/rnaseq/workflows/rnaseq.nf",y,z1)
