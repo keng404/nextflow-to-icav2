@@ -325,8 +325,8 @@ fixNullContainerMap <- function(nf_script){
     }
   }
   modified_script = gsub(".nf$",".dev.nf",nf_script)
-  write.table(lines_to_keep,file=modified_script,row.names=F,col.names = F,quote=F)
-  rlog::log_info(paste("Updating",nf_script))
+  write.table(lines_to_keep,file=modified_script,sep="\n",row.names=F,col.names = F,quote=F)
+  rlog::log_info(paste("Checking for null container maps",nf_script))
   system(paste("cp",modified_script,nf_script))
 }
 #### check for syntax errors regarding processes in nextflow script
@@ -357,11 +357,11 @@ processEnclosureCheck <- function(processLines){
             }
           } else{
             for(item in 1:length(clean_line)){
-              if(clean_line[item] == "{" ){
+              if(clean_line[item] == "{"  || grepl("\\{",clean_line[item])){
                 rlog::log_info(paste("OPEN_BRACKET_LINE:",process_lines[j]))
                 my_left_braces = c(my_left_braces,"{")
               }
-              if(clean_line[item] == "}" ){
+              if(clean_line[item] == "}" || grepl("\\}",clean_line[item])){
                 rlog::log_info(paste("CLOSED_BRACKET_LINE:",process_lines[j]))
                 my_right_braces = c(my_right_braces,"}")
               }
@@ -372,9 +372,12 @@ processEnclosureCheck <- function(processLines){
       modProcessLines[[process_name]] = processLines[[process_name]]
       if(length(my_left_braces) > length(my_right_braces)){
         braces_to_add = length(my_left_braces) - length(my_right_braces)
+        
         rlog::log_info(paste("Adding braces to:",process_name))
         for(bta in 1:braces_to_add){
-          process_lines  = c(process_lines,"}")
+          if(process_lines[length(process_lines)] != "}"){
+            process_lines  = c(process_lines,"}")
+          }
         }
         modProcessLines[[process_name]][["process_lines"]] = process_lines
       } else if(length(my_right_braces) > length(my_left_braces)){
@@ -637,7 +640,8 @@ findModules <- function(nf_file){
 publishStatementCheck <- function(process_lines){
   publishDir_statement_exists = FALSE
   for(i in 1:length(process_lines)){
-    if("publishDir" %in% process_lines[i]){
+   # if("publishDir" %in% strsplit(process_lines[i],"\\s+")[[1]]){
+    if(strsplit(process_lines[i],"\\s+")[[1]][1] == "publishDir"){
       publishDir_statement_exists = TRUE
     }
   }
@@ -647,7 +651,7 @@ publishStatementCheck <- function(process_lines){
 addPublishStatement <- function(process_lines){
   new_process_lines = process_lines
   does_publish_statement_exist = publishStatementCheck(process_lines)
-  publish_dir_statement = 'publishDir path: { \"${params.outdir_custom}\" },mode: \"${params.publish_dir_mode}\",saveAs: { filename -> filename.equals(\'versions.yml\') ? null : filename }'
+  publish_dir_statement = '    publishDir path: { "${params.outdir_custom}" },mode: "${params.publish_dir_mode}",saveAs: { filename -> filename.equals(\'versions.yml\') ? null : filename }'
   if(!does_publish_statement_exist){
     new_process_lines = c(new_process_lines[1],publish_dir_statement,new_process_lines[2:length(new_process_lines)])
   }
@@ -763,14 +767,21 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     module_lines = t(read.delim(module_script,header=F,quote=""))
     module_lines1 = addPublishStatement(module_lines)
     ###########################################
-    if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
-      updated_module_script = gsub(".nf$",".dev.nf",module_script)
-      write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
-      rlog::log_info(paste("Generated updated module script to:",updated_module_script))
-      system(paste("cp",updated_module_script,module_script))
+    #if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
+    updated_module_script = gsub(".nf$",".dev.nf",module_script)
+    print(module_lines1)
+    write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
+    rlog::log_info(paste("Generated updated module script to:",updated_module_script))
+    system(paste("cp",updated_module_script,module_script))
+    #}
+    publish_dir_statement = paste("params.outdir_custom","=", paste("\"",getCustomOutdirName(module_of_interest),"\"",sep=""))
+    if(length(grepl("\\{$",lines_to_add[length(lines_to_add)])) == 0){
+      lines_to_add = c(lines_to_add,publish_dir_statement)
+    } else if(!grepl("\\{$",lines_to_add[length(lines_to_add)])){
+      lines_to_add = c(lines_to_add,publish_dir_statement)
+    } else{
+      lines_to_add = c(lines_to_add,publish_dir_statement)
     }
-    publish_dir_statement = paste("params.outdir_custom","=", getCustomOutdirName(module_of_interest))
-    lines_to_add = c(lines_to_add,publish_dir_statement)
     module_name_for_configuration = moduleNameMatcher(module_metadata,module_of_interest)
     if(is.null(module_name_for_configuration)){
       rlog::log_info(paste("Not adding additional configuration for:",module_of_interest,"in",nf_script))
@@ -789,7 +800,7 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
               if(length(parameter_value) > 1){
                 parameter_value = paste(parameter_value , collapse = " ")
               }
-              lines_to_add = c(lines_to_add,paste("\t",configuration_parameters[k1],"=",parameter_value))
+              lines_to_add = c(lines_to_add,paste("   ",configuration_parameters[k1],"=",parameter_value))
             }
             lines_to_add = c(lines_to_add,"}")
             
@@ -811,18 +822,23 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     if(length(line_number_key) >1) {
       rlog::log_warn(paste("Not sure how to perform edits for:",module_of_interest,nf_script,"Skipping edits."))
     } else{
-      line_edits[[line_number_key]] = lines_to_add
+      line_edits[[toString(line_number_key)]] = lines_to_add
     }
   }
+  #wprint(line_edits)
   #########################
   for(lidx in 1:length(new_lines)){
     if(toString(lidx + 1) %in% names(line_edits)){
-      new_lines[lidx] = paste(new_lines[lidx],line_edits[[toString(lidx + 1)]],collapse="\n")
+      if(!is.null(line_edits[[toString(lidx + 1)]])){
+        rlog::log_info(paste("ADDDING_NEW_LINES:",paste(new_lines[lidx],line_edits[[toString(lidx + 1)]],collapse="\n")))
+        new_lines[lidx] = paste(new_lines[lidx],paste(line_edits[[toString(lidx + 1)]],collapse="\n"),collapse="\n",sep="\n")
+        #new_lines[lidx] =  paste(line_edits[[toString(lidx + 1)]],collapse="\n")
+      }
     }
   }
   updated_nf_script = gsub(".nf$",".final_edits.nf",nf_script)
   rlog::log_info(paste("Writing out final edits to :",updated_nf_script))
-  write.table(x=new_lines,file=updated_nf_script,quote=F,row.names=F,col.names=F)
+  write.table(x=new_lines,file=updated_nf_script,sep="\n",quote=F,row.names=F,col.names=F)
   system(paste("cp",updated_nf_script,nf_script))
 }
 
