@@ -13,7 +13,8 @@ RUN apt-get install -y expect
 #### copy script to automate ICA CLI setup
 COPY *exp /usr/local/bin/
 ### install nf-core python module and nextflow
-RUN apt-get install -y openjdk-11-jdk
+RUN apt-get update -y && \
+    apt-get install -y openjdk-11-jdk
 RUN cd /usr/local/bin && \
     curl -s https://get.nextflow.io | bash
 RUN apt-get install -y python3-pip
