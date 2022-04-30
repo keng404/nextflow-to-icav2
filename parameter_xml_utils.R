@@ -73,6 +73,7 @@ craftCLIdataInputs <- function(input_list){
 
 mockCLIcommand <- function(workflow_language=NULL,pipeline_name=NULL,user_reference=NULL,input_cli,parameter_cli){
   workflow_language = tolower(workflow_language)
+  tags = c('--reference-tag','--technical-tag', '--user-tag')
   if(is.null(workflow_language)){
     workflow_language = "nextflow"
   }
@@ -85,7 +86,8 @@ mockCLIcommand <- function(workflow_language=NULL,pipeline_name=NULL,user_refere
   if(is.null(user_reference)){
     user_reference = "test_run"
   }
-  full_cli = paste("icav2 projectpipelines ",workflow_language,"create",pipeline_name,"--user-reference",user_reference,input_cli,parameter_cli,collapse = " ")
+  tag_str = paste(tags,user_reference,collapse = " ")
+  full_cli = paste("icav2 projectpipelines ",workflow_language,"create",pipeline_name,"--user-reference",user_reference,input_cli,parameter_cli,tag_str,collapse = " ")
   full_cli = paste(full_cli,"[ OPTIONAL:","--x-api-key","API_KEY","--project-id","PROJECT_ID","]",collapse = " ")
   return(full_cli)
 }
