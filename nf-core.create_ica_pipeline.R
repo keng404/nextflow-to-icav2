@@ -75,7 +75,7 @@ if(workflow_language == "cwl"){
 } else if(workflow_language == "nextflow"){
   main_script = args$nextflow_script
 }
-ica_pipeline_launch_cmd = c("icav2 projectpipelines",workflow_language,"start",pipeline_name)
+ica_pipeline_launch_cmd = c("icav2 projectpipelines",workflow_language,"start",args$pipeline_name)
 ica_pipeline_launch_cmd_global_flags = c("-k",paste("'",api_key,"'",sep=""))
 #######################
 additional_files = args$project_directory
