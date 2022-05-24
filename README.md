@@ -44,10 +44,14 @@ nf-core schema build -d {PATH_NF-CORE_DIR}
 
 # To generate an XML file and edits to Nextflow script, use the following template
 ```bash
-Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH} or --generate-parameters-xml]
+Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH} or --generate-parameters-xml] --intermediate-copy-template {PATH_TO_RSCRIPTS}/dummy_template.txt
 ```
 Specifying the ```--parameters-xml``` parameter tells the ```nf-core.ica_mod_nf_script.R``` to generate an XML files based on the NF script and config you specify.
 Default behavior is to traverse the config file you provide and parse additional config files that might be referenced. Not setting the ```--parameters-xml``` flag will tell the script to just focus on making edits to NF script.
+
+For DSL2-enabled workflows add '--dsl2-enabled' to your command line.
+
+This script will first parse your DEFAULT_NF_CONFIG and try to create a dictionary of most of the configurations in this file as well as any additional configs referenced in DEFAULT_NF_CONFIG via an ```includeConfig 'path-to-config'``` statement
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
 
@@ -55,6 +59,8 @@ A current list of todos for this script is [here](https://github.com/keng404/nex
 ```bash
 Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
+
+Add the flag ```--simple-mode``` if you have custom groovy libraries or modules files your workflow references. What this script will do when this flag is specified is to upload these files and directories to ICA and to update the parameter XML file to allow you to specify directories under the parameters project_dir and files under input_files. This will ensure that these files and directories will be placed in the workflow.launchDir when the pipeline is invoked.
 
 # As a convenience, one can also get a templated CLI command to help them run a pipeline in ICA via the following:
 ```bash
