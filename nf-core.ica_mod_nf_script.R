@@ -18,6 +18,8 @@ parser$add_argument("-f","--nf-core-mode","--nf_core_mode",action="store_true",
                     default=FALSE, help = "flag to indicate nf-core pipeline")
 parser$add_argument("-x","--parameters-xml","--parameters_xml",
                     default=NULL, help = " parameters XML file output")
+parser$add_argument("-k","--is-simple-config","--is_simple_config",
+                    action="store_true",default=FALSE, help = "Use config")
 parser$add_argument("-g","--generate-parameters-xml","--generate_parameters_xml",
                     action="store_true",default=FALSE, help = "Generate parameters XML file")
 parser$add_argument("-i","--configs-to-ignore","--configs_to_ignore", default=c(""),nargs="?",
@@ -37,8 +39,7 @@ parser$add_argument("-n","--ica-instance-namespace","--ica_instance_namespace", 
 # get command line options, if help option encountered print help and exit,
 # otherwise if options not found on command line then set defaults, 
 args <- parser$parse_args()
-
-
+is_simple_config = args$is_simple_config
 nf_script = args$nf_script
 config_file = args$config_file
 config_dat  = read.delim(config_file,quote="",header=F)
@@ -241,23 +242,33 @@ localConfigOrNot <- function(config_list){
   return(config_list[keep_array])
 }
 
-z1 = findOtherConfigs(conf_path=config_file,conf_data=config_dat)
+rlog::log_warn(paste("Number of closures in config",config_file,sum(grepl("\\{",t(config_dat)))))
+if( sum(grepl("\\{",t(config_dat))) > 0 && !is_simple_config){
+  z1 = findOtherConfigs(conf_path=config_file,conf_data=config_dat)
+} else{
+  z1 = NULL 
+}
 final_config_list = c()
-if(length(configs_to_ignore) > 0){
+if(length(configs_to_ignore) > 0 && !is.null(z1)){
   z1 = z1[ !(z1 %in% configs_to_ignore)]
 }
+
 final_config_list = c()
 if(length(z1) > 0){
   final_config_list = localConfigOrNot(paramsFiller(list_to_fill=z1,params_list=z))
+} else{
+  final_config_list = NULL
 }
-
 #############################
 #### for DSL2 workflows ... find module config file and load in the configruation metadata.
 #### For now we hard-code 'modules.config' by nf-core convention .... may expose this as command-line parameter
 ############################################
 modules_config_file = NULL
 modules_config = list()
-is_module_config_file = apply(t(z1),2,function(elem) basename(elem) == "modules.config")
+is_module_config_file = NULL
+if(!is.null(z1)){
+  is_module_config_file = apply(t(z1),2,function(elem) basename(elem) == "modules.config")
+}
 if(args$dsl2_enabled){
   if(sum(is_module_config_file) > 0 ){
     if(is.null(args$modules_config_file)){
@@ -1196,14 +1207,13 @@ get_instance_type_table <- function(url){
 ica_instance_table = get_instance_type_table(url=instance_type_table_url)
 
 ################
-
 ###  need to figure out how to keep proper indentation when modifying a process
-
-##STEP3: Add lines for each process that:
+##SAdd lines for each process that:
 ##  1) defines an instance-type --- use the Illumina GitBook for this  and  the configs to determine the appropriate cpu/ram settings 
 ## for each proess look for label, cpu, and or memory
 ## if for development, add a 'errorStrategy ignore' in our process
 ##  2) defines a docker image to run the instance on
+#################
 
 getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table){
   pod_annotation_prefix = paste("pod annotation:", "'scheduler.illumina.com/presetSize'", ",","value:")

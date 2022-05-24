@@ -757,7 +757,7 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
   new_lines = t(read.delim(nf_script,header=F,quote=""))
   line_edits = list()
   modules_of_interest = names(module_location)
-  configurations_to_ignore = c("publishDir","errorStrategy","cpus","memory")
+  configurations_to_ignore = c("errorStrategy","cpus","memory")
   for(i in 1:length(modules_of_interest)){
     module_of_interest = modules_of_interest[i]
     lines_to_add = c()
