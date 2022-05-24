@@ -16,6 +16,7 @@
 		- [X] add pod anotation, container references when needed (edits where we add)
 		- [ ] How to manage processes with no input expression? -- second pass?
 		- [ ] How to select for process container where configurations point to a Groovy expression?
+		- [ ] Configure whether users want singularity or docker images for their processes/modules --- currently we try to only use docker images
 - [ ] 8) add DSL2 support
  		- [X] make sure to track and properly edit multiple NF scripts ( main, workflow, subworkflow, module) that get referenced
  		- [ ] properly pass publishDir and process.ext.args to downstream processes
