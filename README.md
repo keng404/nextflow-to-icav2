@@ -51,7 +51,7 @@ Default behavior is to traverse the config file you provide and parse additional
 
 For DSL2-enabled workflows add '--dsl2-enabled' to your command line.
 
-This script will first parse your DEFAULT_NF_CONFIG and try to create a dictionary of most of the configurations in this file as well as any additional configs referenced in DEFAULT_NF_CONFIG via an ```includeConfig 'path-to-config'``` statement
+This script will first parse your DEFAULT_NF_CONFIG and try to create a dictionary of most of the configurations in this file as well as any additional configs referenced in DEFAULT_NF_CONFIG via an ```includeConfig 'path-to-config'``` statement. If your configuration file is not as complex, add the flag ```--is-simple-config``` as a workaround to avoid the script error-ing out when trying to build this configuration dictionary.
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
 
