@@ -70,7 +70,7 @@ find_all_nf_scripts <- function(main_script){
   nf_script_dat = read.delim(main_script,quote = "",header=F)
   for(i in 1:nrow(nf_script_dat)){
     skip_line = FALSE
-    line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
+    line_split = strsplit(as.character(nf_script_dat[i,]),"\\s+")[[1]]
     clean_line = line_split
     for(j in 1:length(line_split)){
       clean_line[j] = trimws(line_split[j])
@@ -342,7 +342,7 @@ processEnclosureCheck <- function(processLines){
       my_right_braces = c()
       for(j in 1:length(process_lines)){
         skip_line = FALSE
-        line_split = strsplit(process_lines[j],"\\s+")[[1]]
+        line_split = strsplit(as.character(process_lines[j]),"\\s+")[[1]]
         clean_line = line_split
         for(k in 1:length(line_split)){
           clean_line[k] = trimws(line_split[k])
@@ -522,7 +522,8 @@ loadModuleMetadata <- function(config_files){
               parameter_name = paste("process.",parameter_name,sep="")
             }
             if(parameter_name == "publishDir"){
-              value_collection = c(value_collection,paste(clean_line[3:length(clean_line)],collapse=" "))
+              rlog::log_info(paste("IGNORING publishDir configuration for now"))
+             # value_collection = c(value_collection,paste(clean_line[3:length(clean_line)],collapse=" "))
             } else{
               value_collection = paste(clean_line[3:length(clean_line)],collapse="")
               value_collection = gsub("\\{","",value_collection)
@@ -603,29 +604,29 @@ findModules <- function(nf_file){
           rlog::log_info(paste("INCLUDE_STATEMENT:",paste(include_statement,collapse=" ")))
           relative_file_path = strsplit(nf_file_dat[j,],"\\s+")[[1]]
           relative_file_path = relative_file_path[length(relative_file_path)]
+          relative_file_path_split = strsplit(relative_file_path,"/")[[1]]
           #if(!grepl(".nf$",relative_file_path)){
           #  relative_file_path = paste(relative_file_path,".nf",sep="")
           #}
-          rlog::log_info(paste("Relative_FILE_PATH:",relative_file_path))
-          if(length(include_statement) > 1){
-            for(k in 1:(length(include_statement)-1)){
-              if(include_statement[k + 1] == "as"){
-                rlog::log_info(paste("FOUND:", paste(file_mappings[[relative_file_path]],collapse=",",sep=" ")))
-                modules_of_interest[[include_statement[k + 2]]][["line_number"]] = j
-                modules_of_interest[[include_statement[k + 2]]][["module_path"]] = file_mappings[[relative_file_path]]
-                modules_of_interest[[include_statement[k + 2]]][["original_module_name"]] = include_statement[k]
+            rlog::log_info(paste("Relative_FILE_PATH:",relative_file_path))
+            if(length(include_statement) > 1){
+              for(k in 1:(length(include_statement)-1)){
+                if(include_statement[k + 1] == "as"){
+                  rlog::log_info(paste("FOUND:", paste(file_mappings[[relative_file_path]],collapse=",",sep=" ")))
+                  modules_of_interest[[include_statement[k + 2]]][["line_number"]] = j
+                  modules_of_interest[[include_statement[k + 2]]][["module_path"]] = file_mappings[[relative_file_path]]
+                  modules_of_interest[[include_statement[k + 2]]][["original_module_name"]] = include_statement[k]
+                }
               }
+            } else{
+              modules_of_interest[[include_statement[1]]][["line_number"]] = j
+              modules_of_interest[[include_statement[1]]][["module_path"]] = file_mappings[[relative_file_path]]
             }
           } else{
-            modules_of_interest[[include_statement[1]]][["line_number"]] = j
-            modules_of_interest[[include_statement[1]]][["module_path"]] = file_mappings[[relative_file_path]]
+            if(clean_line[1] %in% names(modules_of_interest)){
+              modules_of_interest[[clean_line[1]]][["line_number"]]  = c(modules_of_interest[[clean_line[1]]][["line_number"]] ,j)
+            }
           }
-        } else{
-          if(clean_line[1] %in% names(modules_of_interest)){
-            modules_of_interest[[clean_line[1]]][["line_number"]]  = c(modules_of_interest[[clean_line[1]]][["line_number"]] ,j)
-          }
-        }
-        
       }
     } else{
       rlog::log_info(paste("Skipping",nf_file_dat[j,]))
@@ -640,21 +641,47 @@ findModules <- function(nf_file){
 publishStatementCheck <- function(process_lines){
   publishDir_statement_exists = FALSE
   for(i in 1:length(process_lines)){
-   # if("publishDir" %in% strsplit(process_lines[i],"\\s+")[[1]]){
-    if(strsplit(process_lines[i],"\\s+")[[1]][1] == "publishDir"){
-      publishDir_statement_exists = TRUE
+    #rlog::log_info(paste("PUBLISH_DIR_LINE_PRINT:",process_lines[i]))
+    if(length(strsplit(process_lines[i],"\\s+")[[1]]) > 0){
+     # if("publishDir" %in% strsplit(process_lines[i],"\\s+")[[1]]){
+      if(strsplit(process_lines[i],"\\s+")[[1]][1] == "publishDir"){
+        publishDir_statement_exists = TRUE
+      }
+      if("publishDir" %in% strsplit(process_lines[i],"\\s+")[[1]][1]){
+        publishDir_statement_exists = TRUE
+      }
     }
   }
+  rlog::log_info(paste("PUBLISH_DIR_STATEMENT_EXISTS:",publishDir_statement_exists))
   return(publishDir_statement_exists)
 }
 
-addPublishStatement <- function(process_lines){
+addPublishStatement <- function(process_lines,publish_dir_path=NULL){
+  publish_dir_statement = NULL
+  if(is.null(publish_dir_path)){
+    rlog::log_error(paste("No argument provided for publish_dir_path"))
+    publish_dir_path = "${params.outdir}"
+  }
   new_process_lines = process_lines
   does_publish_statement_exist = publishStatementCheck(process_lines)
-  publish_dir_statement = '    publishDir path: { "${params.outdir_custom}" },mode: "${params.publish_dir_mode}",saveAs: { filename -> filename.equals(\'versions.yml\') ? null : filename }'
-  if(!does_publish_statement_exist){
-    new_process_lines = c(new_process_lines[1],publish_dir_statement,new_process_lines[2:length(new_process_lines)])
+  if(!is.null(publish_dir_path)){
+    publish_dir_statement = paste(paste(paste("","publishDir  ",collapse="\t",sep="\t"), 'path: { "',publish_dir_path,'"}',sep=""),paste(', mode: "copy", ','saveAs: { filename -> filename.equals(\'versions.yml\') ? null : filename }',sep=""),collapse="",sep="")
+    #publish_dir_statement = gsub("outdir_custom1",publish_dir_path,publish_dir_statement)
+    rlog::log_info(paste("PUBLISH_DIR_STATEMENT:",publish_dir_statement))
+    idx = 1
+    for(i in 1:length(process_lines)){
+      if(grepl("\\{",process_lines[i])){
+        idx = i
+        break
+      }
+    }
+    rlog::log_info(paste("IDX is",idx))
+    rlog::log_info(paste("PROCESS_LENGTH IS",length(publish_dir_statement)))
+    if(!does_publish_statement_exist && !is.null(publish_dir_statement)){
+      new_process_lines = c(process_lines[idx],publish_dir_statement,process_lines[(idx+1):length(process_lines)])
+    }
   }
+  print(new_process_lines)
   return(new_process_lines)
 }
 ############################################
@@ -685,6 +712,8 @@ simplifyExpression <- function(groovy_expression){
 getCustomOutdirName <- function(module_name){
   outdir_base = '${params.outdir}'
   additional_dir_path = paste(rev(strsplit(tolower(module_name),"[-_]")[[1]]),collapse="/")
+  # remove special characters in basename of outdir path
+  additional_dir_path = gsub("[[:punct:]]", "", additional_dir_path)  
   return(paste(outdir_base,additional_dir_path,sep="/"))
 }
 
@@ -752,12 +781,106 @@ moduleNameMatcher <- function(module_metadata,query_name){
   return(name_of_interest)
 }
 ############################
+needsTaskCpuOrMemDeclaration <- function(process_lines){
+  needs_declaration = list()
+  needs_declaration['task.cpus'] = FALSE
+  needs_declaration['task.memory'] = FALSE
+  memory_declaration = FALSE
+  cpu_declaration = FALSE
+  for(i in 1:length(process_lines)){
+    line_tokenization = strsplit(process_lines[i],"\\s+")[[1]]
+    line_tokenization = apply(t(line_tokenization),2,trimws)
+    line_tokenization = line_tokenization[line_tokenization!=""]
+    if(length(line_tokenization) > 0){
+      if(line_tokenization[1] == "cpus"){
+        cpu_declaration = TRUE
+      }
+      if(line_tokenization[1] == "memory"){
+        memory_declaration = TRUE
+      }
+      if(!cpu_declaration && grepl("task.cpus",process_lines[i])){
+        needs_declaration['task.cpus'] = TRUE
+      }
+      if(!memory_declaration && grepl("task.memory",process_lines[i])){
+        needs_declaration['task.memory'] = TRUE
+      }
+    }
+  }
+  return(needs_declaration)
+}
+grabPodAnnotation <- function(process_lines){
+  is_pod_annotation_line = apply(t(process_lines),2,function(x) grepl("pod annotation:",x))
+  if(sum(is_pod_annotation_line) > 0){
+    pod_annotation_line = process_lines[is_pod_annotation_line][1]
+    pod_annotation_line_split = strsplit(pod_annotation_line,"\\s+")[[1]]
+    pod_annotation_line_split = pod_annotation_line_split[pod_annotation_line_split!=""]
+    pod_annotation_label = pod_annotation_line_split[length(pod_annotation_line_split)]
+    pod_annotation_label = gsub("'","",pod_annotation_label) 
+    return(pod_annotation_label)
+  } else{
+    rlog::log_info(paste("grabPodAnnotation:PROCESS_OF_INTEREST:",process_lines))
+    stop(paste("Could not find pod annotation line for process above"))
+  }
+}
+###
+## lookup_table format found in getInstancePodAnnotation function in the nf-core.ica_mod_nf_script.R file
+generateMemOrCPUdeclarations <- function(declaration_list,pod_annotation,lookup_table){
+  declarations_to_add = c()
+  scale_factor = 0.75  # make sure we don't take up all CPUs and memory to avoid throtting/job failure that way
+  if(is.null(pod_annotation)){
+    if(declaration_list[['task.cpus']]){
+      declarations_to_add = c(declarations_to_add,"\tcpus 5")
+    }
+    if(declaration_list[['task.memory']]){
+      declarations_to_add = c(declarations_to_add,"\tmemory 20GB")
+    }
+  } else{
+    lookup_query = lookup_table$`Compute.Type` == pod_annotation
+    if( sum(lookup_query) > 0 ){
+      if(declaration_list[['task.cpus']]){
+        cpu_val = floor(scale_factor * strtoi(lookup_table[lookup_query,]$`CPU`[1]))
+        declarations_to_add = c(declarations_to_add,paste("\tcpus",cpu_val))
+      }
+      if(declaration_list[['task.memory']]){
+        mem_val = floor(scale_factor * strtoi(lookup_table[lookup_query,]$`Mem..GB.`[1]))
+        declarations_to_add = c(declarations_to_add,paste("\tmemory",paste("'",mem_val," GB","'",sep="")))
+      }
+    } else{
+      rlog::log_info(paste("ICA_INSTANCE_TABLE:",lookup_table))
+      stop(paste("Could not find pod annotation label:",pod_annotation))
+    }
+  }
+  return(declarations_to_add)
+}
+updateProcessDeclaratives <- function(process_lines,declarations){
+  if(length(declarations) > 0){
+    idx = 1
+    for(i in 1:length(process_lines)){
+      if(grepl("\\{",process_lines[i])){
+        idx = i
+        break
+      }
+    }
+    rlog::log_info(paste("IDX is",idx))
+    new_process_lines = c(process_lines[idx],declarations,process_lines[(idx+1):length(process_lines)])
+    return(new_process_lines)
+  } else{
+    return(process_lines)
+  }
+}
+#############################
 makeFinalEdits <- function(nf_script,module_metadata,module_location){
   new_lines = c()
   new_lines = t(read.delim(nf_script,header=F,quote=""))
+  path_split = strsplit(nf_script,"/")[[1]]
+  is_workflow_or_subworkflow = FALSE
+  # identify if nf_script is a workflow or subworkflow based on file_path
+  if("workflows" %in% path_split || "subworkflows" %in% path_split){
+    is_workflow_or_subworkflow = TRUE
+  }
   line_edits = list()
   modules_of_interest = names(module_location)
-  configurations_to_ignore = c("errorStrategy","cpus","memory")
+  configurations_to_ignore = c("errorStrategy")
   for(i in 1:length(modules_of_interest)){
     module_of_interest = modules_of_interest[i]
     lines_to_add = c()
@@ -765,7 +888,22 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     line_numbers_of_interest = module_location[[module_of_interest]][["line_number"]]
     module_script = module_location[[module_of_interest]][["module_path"]]
     module_lines = t(read.delim(module_script,header=F,quote=""))
-    module_lines1 = addPublishStatement(module_lines)
+    module_lines1 = module_lines
+    output_path = getCustomOutdirName(module_of_interest)
+    rlog::log_info(paste("OUTPUT_PATH:",output_path))
+    if(!publishStatementCheck(module_lines)){
+      if(!is.null(output_path)){
+        if(!is_workflow_or_subworkflow){
+          module_lines1 = addPublishStatement(process_lines=module_lines,publish_dir_path=output_path)
+        } else{
+          rlog::log_info(paste("MAKE_FINAL_EDITS:SKIPPING PUBLISH_DIR STATEMENT FOR:",nf_script))
+        }
+      } else{
+        rlog::log_error(paste("Cannot determine output path for the module",module_of_interest,output_path))
+      }
+    } else{
+      module_lines1 = module_lines
+    }
     ###########################################
     #if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
     updated_module_script = gsub(".nf$",".dev.nf",module_script)
@@ -774,14 +912,16 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     rlog::log_info(paste("Generated updated module script to:",updated_module_script))
     system(paste("cp",updated_module_script,module_script))
     #}
-    publish_dir_statement = paste("params.outdir_custom","=", paste("\"",getCustomOutdirName(module_of_interest),"\"",sep=""))
-    if(length(grepl("\\{$",lines_to_add[length(lines_to_add)])) == 0){
-      lines_to_add = c(lines_to_add,publish_dir_statement)
-    } else if(!grepl("\\{$",lines_to_add[length(lines_to_add)])){
-      lines_to_add = c(lines_to_add,publish_dir_statement)
-    } else{
-      lines_to_add = c(lines_to_add,publish_dir_statement)
-    }
+    #publish_dir_statement = paste("publishDir", paste("\"",getCustomOutdirName(module_of_interest),"\"",sep=""),", mode:'copy'")
+    #if(length(grepl("\\{$",lines_to_add[length(lines_to_add)])) == 0){
+    #  lines_to_add = c(lines_to_add,publish_dir_statement)
+    #} else if(!grepl("\\{$",lines_to_add[length(lines_to_add)])){
+    #  lines_to_add = c(lines_to_add,publish_dir_statement)
+    #} else{
+    #  lines_to_add = c(lines_to_add,publish_dir_statement)
+    #}
+    rlog::log_info(paste("LOOKING_FOR_MODULE_CONFIGURATION_FOR:",module_of_interest))
+    rlog::log_info(paste(names(module_metadata)))
     module_name_for_configuration = moduleNameMatcher(module_metadata,module_of_interest)
     if(is.null(module_name_for_configuration)){
       rlog::log_info(paste("Not adding additional configuration for:",module_of_interest,"in",nf_script))
