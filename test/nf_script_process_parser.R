@@ -302,10 +302,9 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
   return(nf_script_process_lines)
 }
 
-updated_nf_processes = parseProcessesInNextflowScript(nf_script=foi,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
-print(updated_nf_processes[["VEP"]])
-
-test_foi = "/Users/keng/test3.nf"
-updated_nf_processes2 = parseProcessesInNextflowScript(nf_script=test_foi,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
+#updated_nf_processes = parseProcessesInNextflowScript(nf_script=foi,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
+#print(updated_nf_processes[["VEP"]])
+#test_foi = "/Users/keng/test3.nf"
+#updated_nf_processes2 = parseProcessesInNextflowScript(nf_script=test_foi,nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table)
 
 
