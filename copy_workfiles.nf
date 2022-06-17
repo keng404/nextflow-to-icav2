@@ -1,7 +1,7 @@
 process copy_workfiles {
-    container default_container
+    container 'keng404/utils:0.0.2'
     pod annotation: 'scheduler.illumina.com/presetSize', value: 'standard-medium'
-    publishDir "out", mode: params.publish_dir_mode
+    publishDir "out", mode:  'copy'
     time '1d'
     errorStrategy 'ignore'
     
