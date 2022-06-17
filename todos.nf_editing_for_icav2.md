@@ -19,7 +19,7 @@
 		- [ ] Configure whether users want singularity or docker images for their processes/modules --- currently we try to only use docker images
 - [ ] 8) add DSL2 support
  		- [X] make sure to track and properly edit multiple NF scripts ( main, workflow, subworkflow, module) that get referenced
- 		- [ ] properly pass publishDir and process.ext.args to downstream processes
+ 		- [X] properly pass publishDir and process.ext.args to downstream processes
 - [ ] 9) add/reference user guide on additional development tips/topics when migrating nextflow pipelines to ICA
 
 # DEVOPS TODO LIST:
