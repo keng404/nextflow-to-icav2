@@ -269,6 +269,22 @@ is_module_config_file = NULL
 if(!is.null(z1)){
   is_module_config_file = apply(t(z1),2,function(elem) basename(elem) == "modules.config")
 }
+
+merge_module_configuration <- function(meta_module_configuration,new_module_configuration){
+  updated_meta_module_configuration = meta_module_configuration
+  modules_of_interest = names(new_module_configuration)
+  for(j in 1:length(modules_of_interest)){
+    module_of_interest = modules_of_interest[j]
+    if(module_of_interest %in% names(updated_meta_module_configuration) ){
+      rlog::log_info(paste("FOUND MODULE CONFIGURATION FOR:",module_of_interest,"AVOIDDING OVERRIDE"))
+    } else{
+      rlog::log_info(paste("ADDING MODULE CONFIGURATION FOR:",module_of_interest))
+      updated_meta_module_configuration[[module_of_interest]] = new_module_configuration[[module_of_interest]]
+    }
+  }
+  return(updated_meta_module_configuration)
+}
+
 if(args$dsl2_enabled){
   if(sum(is_module_config_file) > 0 ){
     if(is.null(args$modules_config_file)){
@@ -279,6 +295,13 @@ if(args$dsl2_enabled){
     source('dsl2_compatible_parser.R')
     modules_config = loadModuleMetadata(modules_config_file)
     rlog::log_info(paste("Found MODULES_CONFIG_FILE:",modules_config_file))
+    other_module_files = findOtherConfigs(conf_path=modules_config_file,conf_data=read.delim(modules_config_file,quote="",header=F))
+    for(omf_idx in 1:length(other_module_files)){
+      rlog::log_info(paste("Found MODULES_CONFIG_FILE:",other_module_files[omf_idx]))
+      module_config_subset = loadModuleMetadata(other_module_files[omf_idx])
+      rlog::log_info(paste("UPDATING MODULE CONFIGURATION"))
+      modules_config = merge_module_configuration(modules_config,module_config_subset)
+    }
     print(modules_config)
   } else{
     rlog::log_info(paste("Could not find MODULES_CONFIG_FILE.\nSkipping the module configuration edits\n"))
@@ -1286,6 +1309,7 @@ malformed_processes <- function(parsed_process_list,script_name){
       rlog::log_info(paste("Double-checking contents of ",process_name,"in","updated_nf_processes variable"))
       if(length(parsed_process_list[[names(parsed_process_list)[i]]]) > 0){
         process_lines = parsed_process_list[[names(parsed_process_list)[i]]][["process_lines"]]
+        process_lines = process_lines[process_lines!= ""]
         second_to_last_line = trimws(process_lines[length(process_lines)-1])
         last_line = trimws(process_lines[length(process_lines)])
         ### we will turn off the flag change for malformed_processes_double_check in the second to last line check
@@ -1293,7 +1317,7 @@ malformed_processes <- function(parsed_process_list,script_name){
         if(second_to_last_line != "'''" && second_to_last_line != "\"\"\""){
           rlog::log_warn(paste("POSSIBLE_MALFORMED_PROCESS for:",process_name,"in",script_name))
           rlog::log_warn(paste("POSSIBLE_MALFORMED_PROCESS for:",process_name,"\nFound",second_to_last_line,"expected","'''"))
-          ###malformed_processes_check = TRUE
+          ##malformed_processes_check = TRUE
           if(!process_name %in% malformed_processes_double_check){
             malformed_processes_double_check = c(malformed_processes_double_check,process_name)
           }
@@ -1312,11 +1336,12 @@ malformed_processes <- function(parsed_process_list,script_name){
         malformed_processes_check = TRUE
       }
     }
-    if(malformed_processes_check){
-      stop("EXITING: Please check stderr for error messages.\nIt looks like the following processes weren't properly parsed:",paste(malformed_processes_double_check,collapse=", "),"\nCheck the parseProcessesInNextflowScript function\n")
-    } else{
-      rlog::log_info("All processes look ok!\n")
-    }
+    #return(malformed_processes_check)
+    #if(malformed_processes_check){
+    #  stop("EXITING: Please check stderr for error messages.\nIt looks like the following processes weren't properly parsed:",paste(malformed_processes_double_check,collapse=", "),"\nCheck the parseProcessesInNextflowScript function\n")
+    #} else{
+    #  rlog::log_info("All processes look ok!\n")
+    #}
   } else{
     rlog::log_info("No processes to validate!\n")
   }
@@ -1342,7 +1367,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
   nf_script_dat = read.delim(nf_script,quote = "",header=F)
   for(i in 1:nrow(nf_script_dat)){
     skip_line = FALSE
-    line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
+    line_split = strsplit(as.character(nf_script_dat[i,]),"\\s+")[[1]]
     clean_line = line_split
     for(j in 1:length(line_split)){
       clean_line[j] = trimws(line_split[j])
@@ -1368,7 +1393,7 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
   process_lines = c()
   for(i in 1:nrow(nf_script_dat)){
     skip_line = FALSE       ### skip comment lines 
-    line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
+    line_split = strsplit(as.character(nf_script_dat[i,]),"\\s+")[[1]]
     clean_line = line_split
     for(j in 1:length(line_split)){
       clean_line[j] = trimws(line_split[j])
@@ -1679,6 +1704,8 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             line_indent = gsub("cpus","",nf_script_dat[i,])
             cpus = strtoi(clean_line[2])
             process_cpus = c(process_cpus,cpus)
+            rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
+            process_lines = c(process_lines,nf_script_dat[i,])
           } else if(clean_line[1] == "memory"){
             for(k in 1:length(names(AllParams))){
               if(!grepl("\\'",names(AllParams)[k]) && !grepl("\\(",names(AllParams)[k])){
@@ -1701,6 +1728,8 @@ parseProcessesInNextflowScript <- function(nf_script,nf_process_metadata,default
             line_indent = gsub("memory","",nf_script_dat[i,])
             memory = strtoi(gsub("\\.GB","",clean_line[2]))
             process_memory = c(process_memory,memory)
+            rlog::log_info(paste("ADDING_LINE:",nf_script_dat[i,]))
+            process_lines = c(process_lines,nf_script_dat[i,])
           } else if(clean_line[1] == "container"){
             for(k in 1:length(names(AllParams))){
               if(!grepl("\\'",names(AllParams)[k]) && !grepl("\\(",names(AllParams)[k])){
@@ -1859,10 +1888,18 @@ workflow_events = c("workflow.onComplete","workflow.onError")
 ##############
 source('dsl2_compatible_parser.R')
 module_files = c()
+workflow_files = c()
+subworkflow_files = c()
 for(uidx in 1:length(scripts_to_check)){
   rlog::log_info(paste("Starting to parse:",scripts_to_check[uidx]))
   if(sum("modules" %in% strsplit(scripts_to_check[uidx],"/")[[1]]) > 0) {
     module_files = c(module_files,scripts_to_check[uidx])
+  }
+  if(sum("workflows" %in% strsplit(scripts_to_check[uidx],"/")[[1]]) > 0 ) {
+    workflow_files = c(workflow_files,scripts_to_check[uidx])
+  }
+  if(sum("subworkflows" %in% strsplit(scripts_to_check[uidx],"/")[[1]]) > 0 ) {
+    subworkflow_files = c(subworkflow_files,scripts_to_check[uidx])
   }
   updated_nf_processes = parseProcessesInNextflowScript(nf_script=scripts_to_check[uidx],nf_process_metadata=nf_process_metadata,default_container = default_container,ica_instance_table = ica_instance_table,AllParams = y)
   #print(updated_nf_processes[["VEP"]])
@@ -2101,9 +2138,11 @@ for(uidx in 1:length(scripts_to_check)){
   fixNullContainerMap(nf_script=scripts_to_check[uidx])
   if(args$dsl2_enabled){
     if(length(names(modules_config)) > 0){
+      rlog::log_info(paste("CHECKING_FOR_MODULES"))
       module_location = findModules(nf_file=scripts_to_check[uidx])
       print(module_location)
       if(length(names(module_location)) > 0 ){
+        source('dsl2_compatible_parser.R')
         rlog::log_info(paste("ADDITIONAL_STEP:",scripts_to_check[uidx], "adding the proper module configurations based on:",modules_config_file))
         makeFinalEdits(nf_script = scripts_to_check[uidx],module_metadata = modules_config,module_location = module_location)
       } else{
@@ -2117,18 +2156,75 @@ for(uidx in 1:length(scripts_to_check)){
 ###############
 if(length(module_files) > 0){
   source('dsl2_compatible_parser.R')
+  process_directives = c("publishDir","pod","errorStrategy","time")
   for(i in 1:length(module_files)){
     mfoi = module_files[i]
     mfoi_lines = t(read.delim(mfoi,header=F,quote=""))
     mfoi_lines1 = c()
-    for(j in 1:length(mfoi_lines)){
-      mfoi_lines_split = strsplit(mfoi_lines[j],"\\s+")[[1]]
-      if(!"publishDir" %in% mfoi_lines_split){
-       mfoi_lines1 = c(mfoi_lines1,mfoi_lines[j]) 
-      }
+    module_name = "UNKNOWN"
+    process_directive_count = list()
+    for(ipd in 1:length(process_directives)){
+      process_directive_count[[process_directives[ipd]]] = 0
     }
-    module_lines1 = addPublishStatement(mfoi_lines1)
+    for(j in 1:length(mfoi_lines)){
+      add_line = TRUE
+      mfoi_lines_split = strsplit(mfoi_lines[j],"\\s+")[[1]]
+      mfoi_lines_split = mfoi_lines_split[mfoi_lines_split!=""]
+      if(length(mfoi_lines_split) >= 2){
+        if("process" %in% mfoi_lines_split){
+          module_name = mfoi_lines_split[2]
+        }
+        # avoid duplicate process directives ... causess errors 
+        if(mfoi_lines_split[1] %in% process_directives){
+          #print(process_directive_count)
+          rlog::log_info(paste("FOUND_PROCESS_DIRECTIVE_OF_INTEREST",mfoi_lines_split[1]))
+          if(mfoi_lines_split[1] == "pod"){
+            rlog::log_info(paste("POD_ANNOTATION_LINE:",paste(mfoi_lines_split,collapse="_",sep="_")))
+            ### add specific note to only coount pod annotation
+            rlog::log_info(paste("IS_IT_POD_ANNOTATION:","annotation:"  %in% mfoi_lines_split))
+            if("annotation:"  %in% mfoi_lines_split){
+              process_directive_count[[mfoi_lines_split[1]]]  = process_directive_count[[mfoi_lines_split[1]]] + 1
+            }
+          } else{
+              process_directive_count[[mfoi_lines_split[1]]]  = process_directive_count[[mfoi_lines_split[1]]]  + 1
+          }
+          if(process_directive_count[[mfoi_lines_split[1]]]  > 1){
+            add_line = FALSE
+          }
+        } 
+      } 
+      if(add_line){
+        mfoi_lines1 = c(mfoi_lines1,mfoi_lines[j]) 
+      } else{
+        rlog::log_info(paste("NOT_ADDING_LINE:",mfoi_lines[j]))
+      }
+
+    }
+    module_lines1 = mfoi_lines1
+    path_split = strsplit(mfoi,"/")[[1]]
+    is_workflow_or_subworkflow = FALSE
+    if("workflows" %in% path_split || "subworkflows" %in% path_split){
+      is_workflow_or_subworkflow = TRUE
+    }
+    if(!is_workflow_or_subworkflow){
+      module_lines1 = addPublishStatement(mfoi_lines1,getCustomOutdirName(module_name))
+    } else{
+      rlog::log_info(paste("addPublishStatement:SKIPPING PUBLISH_DIR STATEMENT FOR:",nf_script))
+    }
+    if(grepl("\\}",module_lines1[length(module_lines1)]) && grepl("\\}",module_lines1[length(module_lines1)-1]) ){
+      module_lines1 = module_lines1[1:(length(module_lines1)-1)]
+    }
     ###########################################
+    ### update mem and cpu where needed. --- do I see task.cpus or task.mem
+    declaration_list = needsTaskCpuOrMemDeclaration(module_lines1)
+    ### ica_instance_table, pod annotation line and grab CPU and Mem
+    pod_annotation = grabPodAnnotation(module_lines1)
+    ### convert CPU and Mem values to nextflow compatible strings
+    declaration_lines = generateMemOrCPUdeclarations(declaration_list,pod_annotation,ica_instance_table)
+    rlog::log_info(paste("ADDIING_DECLARATIVES:",declaration_lines))
+    ### inject into module if needed
+    module_lines1 = updateProcessDeclaratives(module_lines1,declaration_lines)
+    #########
     #if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
     updated_module_script = gsub(".nf$",".dev.nf",mfoi)
     print(module_lines1)
@@ -2138,5 +2234,88 @@ if(length(module_files) > 0){
   }
 }
 #################
+
+## remove vestigal publishDir lines
+for(idx in 1:length(workflow_files)){
+  wfoi = workflow_files[idx]
+  wfoi_lines = t(read.delim(wfoi,header=F,quote=""))
+  wfoi_lines1 = wfoi_lines
+  publishDir_statement_or_not = apply(t(wfoi_lines),2,function(x) grepl("publishDir",x))
+  wfoi_lines1 = wfoi_lines1[!publishDir_statement_or_not]
+  updated_workflow_file = gsub(".nf$",".dev.nf",workflow_files[idx])
+  write.table(x=wfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
+  rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
+  system(paste("cp",updated_workflow_file,wfoi))
+}
+##########################################
+getParamsTokens <- function(my_line){
+  params_tokens = c()
+  line_tokens = strsplit(my_line,"\\s+")[[1]]
+  line_tokens = apply(t(line_tokens),2,trimws)
+  line_tokens = line_tokens[line_tokens!=""]
+  if(length(line_tokens) > 0){
+    for(i in 1:length(line_tokens)){
+      line_tokens[i] = gsub(",","",line_tokens[i])
+      if(grepl("^params\\.",line_tokens[i])){
+        rlog::log_info(paste("getParamsTokens:ADDING_TOKEN:",line_tokens[i]))
+        params_tokens = c(params_tokens,line_tokens[i])
+      }
+    }
+  }
+  params_tokens = params_tokens[!is.null(params_tokens)]
+  return(unique(params_tokens))
+}
+obtainDefaultValues <- function(main_script,tokens_of_interest){
+  found_configuration = list()
+  for(k in 1:length(tokens_of_interest)){
+    found_configuration[[tokens_of_interest[k]]] = FALSE
+  }
+  default_configuration_lines = c("params = [:]")
+  main_script_dat = t(read.delim(main_script,header=F,quote=""))
+  for(i in 1:length(main_script_dat)){
+    main_script_line = main_script_dat[i]
+    main_script_line_split = strsplit(main_script_line,"\\s+")[[1]]
+    main_script_line_split = apply(t(main_script_line_split),2,trimws)
+    main_script_line_split = main_script_line_split[main_script_line_split!=""]
+    for(j in 1:length(tokens_of_interest)){
+      if(tokens_of_interest[j] == main_script_line_split[1]){
+        if(!found_configuration[[tokens_of_interest[j]]]){
+          default_configuration_lines = c(default_configuration_lines,main_script_dat[i])
+          found_configuration[[tokens_of_interest[j]]] = TRUE
+        }
+      }
+    }
+  }
+  return(default_configuration_lines)
+}
+## add params = [:] amd params.{variable_name} to subworkflow file
+for(idx in 1:length(subworkflow_files)){
+  swfoi = subworkflow_files[idx]
+  swfoi_lines = t(read.delim(swfoi,header=F,quote=""))
+  swfoi_lines_of_interest = swfoi_lines[apply(t(swfoi_lines),2,function(x) grepl("params\\.",x))]
+  ## find params, add params of interest to top of file
+  tokens_of_interest = apply(t(swfoi_lines_of_interest),2,getParamsTokens)
+  tokens_of_interest = unique(unlist(tokens_of_interest))
+  tokens_of_interest = tokens_of_interest[!is.null(tokens_of_interest)]
+  lines_to_add = c()
+  rlog::log_info(paste("LENGTH_OF_TOKENS:",length(tokens_of_interest)))
+  if(length(tokens_of_interest) > 0){
+    rlog::log_info(paste("TOKENS_OF_INTEREST:",paste(tokens_of_interest,sep=", ",collapse=", ")))
+    rlog::log_info(paste("READING_IN_MAIN_NF_SCRIPT:",updated_nf_file))
+    lines_to_add = obtainDefaultValues(updated_nf_file,tokens_of_interest)
+  }
+  if(length(lines_to_add) > 0){
+    swfoi_lines1 = c(lines_to_add,swfoi_lines)
+  } else{
+    swfoi_lines1 = swfoi_lines
+  }
+  #############################################
+  updated_workflow_file = gsub(".nf$",".dev.nf",swfoi)
+  write.table(x=swfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
+  rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
+  system(paste("cp",updated_workflow_file,swfoi))
+}
+
+
 #STEP4: Check for file_paths based-off the parameter XML file to ensure that they are
 # wrapped by file(myChannel1)
