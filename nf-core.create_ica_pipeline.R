@@ -189,6 +189,58 @@ if(is.null(comments) && is_nf_core){
 if(is_nf_core && is.null(pipeline_name)){
   pipeline_name = paste("nf-core pipeline",basename(dirname(main_script)),collapse="_")
 }
+###############################
+get_all_pipelines <- function(api_key){
+  all_pipeline_names = c()
+  get_pipelines_command = paste("icav2 pipelines list -o json","-k",paste("'",api_key,"'",sep=""), ">","pipelines.json")
+  #rlog::log_info(paste("RUNNING CMD:",get_pipelines_command))
+  system(get_pipelines_command)
+  my_dat = rjson::fromJSON(file="pipelines.json")
+  pipelines = my_dat$items
+  for(i in 1:length(pipelines)){
+    all_pipeline_names = c(all_pipeline_names,pipelines[[i]]$code)
+  }
+  return(all_pipeline_names)
+}
+find_relevant_pipeline_names <- function(query,api_key){
+  name_list = get_all_pipelines(api_key)
+  if(sum(name_list %in% query) > 0){
+    results = name_list[name_list %in% query]
+    other_matches = apply(t(name_list),2,function(x) grepl(query,x))
+    if(sum(other_matches) > 0){
+      results = unique(c(results,name_list[other_matches]))
+    }
+    return(sort(results))
+  } else{
+    return(NULL)
+  }
+}
+rename_pipeline_name <- function(pipeline_name,api_key){
+  new_pipeline_name = find_relevant_pipeline_names(pipeline_name,api_key)
+  rlog::log_info(paste("RELEVANT_PIPELINE_NAMES:",new_pipeline_name))
+  if(!is.null(new_pipeline_name)){
+    pipeline_name = new_pipeline_name[length(new_pipeline_name)]
+  } else{
+    return(pipeline_name)
+  }
+  pipeline_name_split = strsplit(pipeline_name,"_")[[1]]
+  if(grepl("^v",pipeline_name_split[length(pipeline_name_split)])){
+    version_number = gsub("v","",pipeline_name_split[length(pipeline_name_split)])
+    if(!is.na(strtoi(version_number)) ) {
+      version_number = strtoi(version_number) + 1
+      pipeline_name_split[length(pipeline_name_split)] = paste("v",version_number,sep="")
+    } else{
+      pipeline_name_split = c(pipeline_name_split,"v1")
+    }
+  } else{
+    pipeline_name_split = c(pipeline_name_split,"v1")
+  }
+  new_name = paste(pipeline_name_split,sep="_",collapse="_")
+  rlog::log_info(paste("RENAMING_PIPELINE_NAME:",pipeline_name,"TO",new_name))
+  return(new_name)
+}
+###########################3
+pipeline_name = rename_pipeline_name(pipeline_name,api_key)
 pipeline_creation_request[["code"]] = pipeline_name
 pipeline_creation_request[["parametersXmlFile"]] = xml_file
 if(workflow_language == "nextflow"){
@@ -223,6 +275,8 @@ if(!is.na(documentation)){
       }
     }
     if(length(lines_to_add) >0){
+      #description_content = paste("See",paste("https://github.com/nf-core/",pipeline_name,sep=""))
+      description_content = description_content[description_content != ""]
       description_content = paste(lines_to_add,collapse = "\\n")
       description_content = gsub("[\\(\\)\\[\\]]"," ",description_content,perl=T)
       #description_content = paste(strsplit(description_content,"[::punc::]+")[[1]],collapse=" ")
@@ -345,56 +399,80 @@ pipeline_creation_request[["categories"]] = ""
 pipeline_creation_request[["htmlDocumentation"]] = ""
 pipeline_creation_request[["metadataModelFile"]] = "" 
 ###### ATTEMPT ____ MANUALLY CREATE ACTUAL CURL COMMAND TO ICA API rest server to  create pipeline
-curl_command = paste("curl --verbose -vL -X 'POST'",pipeline_creation_url)
-files_sections = c("otherNextflowFiles","toolCwlFiles","mainNextflowFile","parametersXmlFile","workflowCwlFile")
-#adding headers
-curl_command = paste(curl_command,"-H 'accept: application/vnd.illumina.v3+json'")
-curl_command = paste(curl_command,"-H 'X-API-Key:",paste(api_key,"'",sep=""))
-curl_command = paste(curl_command,"-H 'Content-Type: multipart/form-data'")
-for(i in 1:length(names(pipeline_creation_request))){
-  if(!names(pipeline_creation_request)[i] %in% files_sections){
-    string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=",pipeline_creation_request[[names(pipeline_creation_request)[i]]],"'",sep=""))
-    curl_command = paste(curl_command,string_to_add)
-  } else{
-    if(names(pipeline_creation_request)[i] == "otherNextflowFiles" || names(pipeline_creation_request)[i] == "toolCwlFiles"){
-      base_path = paste(dirname(main_script),"/",sep="")
-      other_files = c()
-      if(workflow_language == "nextflow"){
-        other_files = pipeline_creation_request[["otherNextflowFiles"]]
-      } else if(workflow_language == "cwl"){
-        other_files =  pipeline_creation_request[["toolCwlFiles"]]
-      }
-      if(length(other_files) > 0){
-        rlog::log_info(paste("OTHER_FILES_TO_ADD",paste(other_files,collapse=", ")))
-        for(fidx in 1:length(other_files)){
-          current_file = other_files[fidx]
-          #type_str = paste(";type=",mime::guess_type(current_file),sep="")
-          filepath_str = paste(";filename=",gsub(base_path,"",current_file),sep="")
-          string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,"'",sep=""))
-          #string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,type_str,"'",sep=""))
-          curl_command = paste(curl_command,string_to_add)
-        }
-      }
-    } else if(names(pipeline_creation_request)[i] == "parametersXmlFile"){
-      string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",pipeline_creation_request[[names(pipeline_creation_request)[i]]],";type=text/xml'",sep=""))
-      curl_command = paste(curl_command,string_to_add)
-    } else if(names(pipeline_creation_request)[i] == "mainNextflowFile" || names(pipeline_creation_request)[i] == "workflowCwlFile"){
-      string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",pipeline_creation_request[[names(pipeline_creation_request)[i]]],"'",sep=""))
+create_curl_command <- function(url,request){
+  curl_command = paste("curl --verbose -vL -X 'POST'",url)
+  files_sections = c("otherNextflowFiles","toolCwlFiles","mainNextflowFile","parametersXmlFile","workflowCwlFile")
+  #adding headers
+  curl_command = paste(curl_command,"-H 'accept: application/vnd.illumina.v3+json'")
+  curl_command = paste(curl_command,"-H 'X-API-Key:",paste(api_key,"'",sep=""))
+  curl_command = paste(curl_command,"-H 'Content-Type: multipart/form-data'")
+  for(i in 1:length(names(request))){
+    if(!names(request)[i] %in% files_sections){
+      string_to_add = paste("-F",paste("'",names(request)[i],"=",request[[names(request)[i]]],"'",sep=""))
       curl_command = paste(curl_command,string_to_add)
     } else{
-      rlog::log_warn(paste("NOT SURE what to do with",names(pipeline_creation_request)[i],":",paste(pipeline_creation_request[[names(pipeline_creation_request)[i]]],collapse=", ")))
+      if(names(request)[i] == "otherNextflowFiles" || names(request)[i] == "toolCwlFiles"){
+        base_path = paste(dirname(main_script),"/",sep="")
+        other_files = c()
+        if(workflow_language == "nextflow"){
+          other_files = request[["otherNextflowFiles"]]
+        } else if(workflow_language == "cwl"){
+          other_files =  request[["toolCwlFiles"]]
+        }
+        if(length(other_files) > 0){
+          rlog::log_info(paste("OTHER_FILES_TO_ADD",paste(other_files,collapse=", ")))
+          for(fidx in 1:length(other_files)){
+            current_file = other_files[fidx]
+            #type_str = paste(";type=",mime::guess_type(current_file),sep="")
+            filepath_str = paste(";filename=",gsub(base_path,"",current_file),sep="")
+            string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,"'",sep=""))
+            #string_to_add = paste("-F",paste("'",names(pipeline_creation_request)[i],"=@",current_file,filepath_str,type_str,"'",sep=""))
+            curl_command = paste(curl_command,string_to_add)
+          }
+        }
+      } else if(names(request)[i] == "parametersXmlFile"){
+        string_to_add = paste("-F",paste("'",names(request)[i],"=@",request[[names(request)[i]]],";type=text/xml'",sep=""))
+        curl_command = paste(curl_command,string_to_add)
+      } else if(names(request)[i] == "mainNextflowFile" || names(request)[i] == "workflowCwlFile"){
+        string_to_add = paste("-F",paste("'",names(request)[i],"=@",request[[names(request)[i]]],"'",sep=""))
+        curl_command = paste(curl_command,string_to_add)
+      } else{
+        rlog::log_warn(paste("NOT SURE what to do with",names(request)[i],":",paste(request[[names(request)[i]]],collapse=", ")))
+      }
     }
   }
+  return(curl_command)
 }
+################################################
+curl_command = create_curl_command(pipeline_creation_url,pipeline_creation_request)
 rlog::log_info(paste("RUNNING:",curl_command))
+###############
+######################
+num_retries = 0
+max_retries = 1
 if(!args$debug){
   pipeline_creation_response = rjson::fromJSON(json_str=system(curl_command,intern=T))
   #pipeline_creation_response = httr::POST(pipeline_creation_url,config=httr::add_headers("X-API-Key"=api_key), httr::accept("application/vnd.illumina.v3+json"),httr::content_type("multipart/form-data"),body = pipeline_creation_request,encode="multipart", verbose())
   #pipeline_creation_response_list = str(content(pipeline_creation_response, "parsed"))
   if(!"pipeline" %in% names(pipeline_creation_response)){
-    rlog::log_error(paste("Could not create pipeline for",main_script))
+    rlog::log_warn(paste("Could not create pipeline for:",main_script))
+    rlog::log_warn(paste("Retrying pipeline creation for:",main_script))
+    while(num_retries < max_retries){
+      ## change the name of the pipeline
+      pipeline_creation_request[["code"]] = rename_pipeline_name(pipeline_name,api_key)
+      pipeline_creation_request[["description"]] = paste("See",paste("https://github.com/nf-core/",dirname(main_script),sep=""))
+      curl_command = create_curl_command(pipeline_creation_url,pipeline_creation_request)
+      rlog::log_info(paste("RUNNING:",curl_command))
+      pipeline_creation_response = rjson::fromJSON(json_str=system(curl_command,intern=T))
+      num_retries = num_retries + 1
+    }
     #print(pipeline_creation_response_list)
-    print(pipeline_creation_response)
+    if(!"pipeline" %in% names(pipeline_creation_response)){
+      rlog::log_error(paste("Could not create pipeline for",main_script))
+      print(pipeline_creation_response)
+    } else{
+      rlog::log_info(paste("Pipeline successfully created for project",ica_project_id,"\nPipeline Id is:",pipeline_creation_response$pipeline$id))
+    }
   } else{
     rlog::log_info(paste("Pipeline successfully created for project",ica_project_id,"\nPipeline Id is:",pipeline_creation_response$pipeline$id))
   }
