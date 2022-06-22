@@ -128,7 +128,7 @@ if(length(strsplit(pipeline_name,"\\s+")[[1]]) >1){
 
 ### auto config ICA CLI ---- for Docker use
 if(!file.exists(paste(Sys.getenv('HOME'),"/.icav2/config.yaml",sep=""))){
-  rlog::log_info(paste("CONFIGURING ICA CLI:\tRunning: ",paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
+  #rlog::log_info(paste("CONFIGURING ICA CLI:\tRunning: ",paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
   system(paste(paste("sed -e s","'/MY_API_KEY/",api_key,"/'",sep=""),"script.exp","> icav2_cli.auto_config.exp"))
   system("expect icav2_cli.auto_config.exp")
 }
@@ -445,7 +445,7 @@ create_curl_command <- function(url,request){
 }
 ################################################
 curl_command = create_curl_command(pipeline_creation_url,pipeline_creation_request)
-rlog::log_info(paste("RUNNING:",curl_command))
+#rlog::log_info(paste("RUNNING:",curl_command))
 ###############
 ######################
 num_retries = 0
