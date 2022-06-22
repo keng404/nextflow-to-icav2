@@ -236,6 +236,7 @@ if(length(data_input_configurations) >0){
       }
     }
     newXMLNode("label", names(data_input_configurations)[i], parent=dataInputNode)
+    data_input_configurations[[names(data_input_configurations)[i]]][["description"]] = gsub("\n$","",data_input_configurations[[names(data_input_configurations)[i]]][["description"]])
     newXMLNode("description", data_input_configurations[[names(data_input_configurations)[i]]][["description"]], parent=dataInputNode)
   }
 } else{
@@ -277,6 +278,7 @@ if(length(step_configurations)>0){
       nested_parameter_node = newXMLNode("parameter",parent=tool_description_node)
       xmlAttrs(nested_parameter_node) = c(code = names(step_configurations[[names(step_configurations)[i]]])[j],minValues = "1",maxValues="1",classification="USER")
       newXMLNode("label",parameter_names[j],parent=nested_parameter_node)
+      parameter_metadata[["description"]] = gsub("\n$","",parameter_metadata[["description"]])
       newXMLNode("description",parameter_metadata[["description"]],parent=nested_parameter_node)
       #### adding options if a list of values are provided
       if("list" %in% names(parameter_metadata)){

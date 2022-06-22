@@ -219,14 +219,21 @@ findOtherConfigs <- function(conf_path,conf_data,defaultConfigs = NULL){
   if(length(lines_to_keep) > 0){
     for(j in 1:length(lines_to_keep)){
       if(lines_to_keep[j] != ""){
+        lines_to_keep[j] = gsub("\\{"," ",lines_to_keep[j])
+        lines_to_keep[j] = gsub("\\}"," ",lines_to_keep[j])
         line_parsed = strsplit(lines_to_keep[j],"\\s+")[[1]]
         line_parsed = line_parsed[line_parsed != ""]
         line_parsed = line_parsed[!grepl("includeConfig",line_parsed)]
+        line_parsed = line_parsed[length(line_parsed)]
         if(!(grepl("\\{",line_parsed))){
           line_parsed = paste(dirname(conf_path),line_parsed,sep="/")
-          configs = c(configs,gsub("\'","",line_parsed))
+          if(!grepl("params",line_parsed)){
+            configs = c(configs,gsub("\'","",line_parsed))
+          }
         } else{
-          configs = c(configs,gsub("\'","",line_parsed))
+          if(!grepl("params",line_parsed)){
+            configs = c(configs,gsub("\'","",line_parsed))
+          }
         }
       }
     }
@@ -252,7 +259,13 @@ final_config_list = c()
 if(length(configs_to_ignore) > 0 && !is.null(z1)){
   z1 = z1[ !(z1 %in% configs_to_ignore)]
 }
-
+### second pass configs to ignore
+configs_to_ignore = z1[ apply(t(z1),2,function(x) sum(strsplit(x,'/')[[1]] == "") > 1) ]
+rlog::log_info(paste("CONFIGS_TO_IGNORE:",configs_to_ignore))
+if(length(configs_to_ignore) > 0 && !is.null(z1)){
+  z1 = z1[ !(z1 %in% configs_to_ignore)]
+}
+rlog::log_info(paste("CONFIGS_FOUND:",z1))
 final_config_list = c()
 if(length(z1) > 0){
   final_config_list = localConfigOrNot(paramsFiller(list_to_fill=z1,params_list=z))
@@ -897,11 +910,11 @@ if(generate_parameters_xml){
   getXMLSections = classifyParameters(paramsToXML = y)
   data_input_configurations = getXMLSections[["dataInputs"]]
   if(args$nf_core_mode){
-    if(!"input" %in% names(data_input_configurations) || length(names(data_input_configurations)) == 0){
+    #if(!"input" %in% names(data_input_configurations) || length(names(data_input_configurations)) == 0){
       ########### workaround add input files --- will not be used by pipeline , but by ICA to stage the data
       data_input_configurations[["input_files"]] = list()
       data_input_configurations[["input_files"]][["description"]] = 'input files for pipeline.\nAll files will be staged in workflow.launchDir'
-    }
+    #}
   }
   #####################
   step_configurations = getXMLSections[["parameterSettings"]]
@@ -2236,16 +2249,18 @@ if(length(module_files) > 0){
 #################
 
 ## remove vestigal publishDir lines
-for(idx in 1:length(workflow_files)){
-  wfoi = workflow_files[idx]
-  wfoi_lines = t(read.delim(wfoi,header=F,quote=""))
-  wfoi_lines1 = wfoi_lines
-  publishDir_statement_or_not = apply(t(wfoi_lines),2,function(x) grepl("publishDir",x))
-  wfoi_lines1 = wfoi_lines1[!publishDir_statement_or_not]
-  updated_workflow_file = gsub(".nf$",".dev.nf",workflow_files[idx])
-  write.table(x=wfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
-  rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
-  system(paste("cp",updated_workflow_file,wfoi))
+if(length(workflow_files) > 0){
+  for(idx in 1:length(workflow_files)){
+    wfoi = workflow_files[idx]
+    wfoi_lines = t(read.delim(wfoi,header=F,quote=""))
+    wfoi_lines1 = wfoi_lines
+    publishDir_statement_or_not = apply(t(wfoi_lines),2,function(x) grepl("publishDir",x))
+    wfoi_lines1 = wfoi_lines1[!publishDir_statement_or_not]
+    updated_workflow_file = gsub(".nf$",".dev.nf",workflow_files[idx])
+    write.table(x=wfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
+    rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
+    system(paste("cp",updated_workflow_file,wfoi))
+  }
 }
 ##########################################
 getParamsTokens <- function(my_line){
@@ -2289,33 +2304,34 @@ obtainDefaultValues <- function(main_script,tokens_of_interest){
   return(default_configuration_lines)
 }
 ## add params = [:] amd params.{variable_name} to subworkflow file
-for(idx in 1:length(subworkflow_files)){
-  swfoi = subworkflow_files[idx]
-  swfoi_lines = t(read.delim(swfoi,header=F,quote=""))
-  swfoi_lines_of_interest = swfoi_lines[apply(t(swfoi_lines),2,function(x) grepl("params\\.",x))]
-  ## find params, add params of interest to top of file
-  tokens_of_interest = apply(t(swfoi_lines_of_interest),2,getParamsTokens)
-  tokens_of_interest = unique(unlist(tokens_of_interest))
-  tokens_of_interest = tokens_of_interest[!is.null(tokens_of_interest)]
-  lines_to_add = c()
-  rlog::log_info(paste("LENGTH_OF_TOKENS:",length(tokens_of_interest)))
-  if(length(tokens_of_interest) > 0){
-    rlog::log_info(paste("TOKENS_OF_INTEREST:",paste(tokens_of_interest,sep=", ",collapse=", ")))
-    rlog::log_info(paste("READING_IN_MAIN_NF_SCRIPT:",updated_nf_file))
-    lines_to_add = obtainDefaultValues(updated_nf_file,tokens_of_interest)
+if(length(subworkflow_files) > 0){
+  for(idx in 1:length(subworkflow_files)){
+    swfoi = subworkflow_files[idx]
+    swfoi_lines = t(read.delim(swfoi,header=F,quote=""))
+    swfoi_lines_of_interest = swfoi_lines[apply(t(swfoi_lines),2,function(x) grepl("params\\.",x))]
+    ## find params, add params of interest to top of file
+    tokens_of_interest = apply(t(swfoi_lines_of_interest),2,getParamsTokens)
+    tokens_of_interest = unique(unlist(tokens_of_interest))
+    tokens_of_interest = tokens_of_interest[!is.null(tokens_of_interest)]
+    lines_to_add = c()
+    rlog::log_info(paste("LENGTH_OF_TOKENS:",length(tokens_of_interest)))
+    if(length(tokens_of_interest) > 0){
+      rlog::log_info(paste("TOKENS_OF_INTEREST:",paste(tokens_of_interest,sep=", ",collapse=", ")))
+      rlog::log_info(paste("READING_IN_MAIN_NF_SCRIPT:",updated_nf_file))
+      lines_to_add = obtainDefaultValues(updated_nf_file,tokens_of_interest)
+    }
+    if(length(lines_to_add) > 0){
+      swfoi_lines1 = c(lines_to_add,swfoi_lines)
+    } else{
+      swfoi_lines1 = swfoi_lines
+    }
+    #############################################
+    updated_workflow_file = gsub(".nf$",".dev.nf",swfoi)
+    write.table(x=swfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
+    rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
+    system(paste("cp",updated_workflow_file,swfoi))
   }
-  if(length(lines_to_add) > 0){
-    swfoi_lines1 = c(lines_to_add,swfoi_lines)
-  } else{
-    swfoi_lines1 = swfoi_lines
-  }
-  #############################################
-  updated_workflow_file = gsub(".nf$",".dev.nf",swfoi)
-  write.table(x=swfoi_lines1,file=updated_workflow_file,sep="\n",quote=F,row.names=F,col.names=F)
-  rlog::log_info(paste("Generated final updated workflow script to:",updated_workflow_file))
-  system(paste("cp",updated_workflow_file,swfoi))
 }
-
 
 #STEP4: Check for file_paths based-off the parameter XML file to ensure that they are
 # wrapped by file(myChannel1)
