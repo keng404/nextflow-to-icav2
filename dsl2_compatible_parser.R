@@ -95,7 +95,14 @@ find_all_nf_scripts <- function(main_script){
         if(clean_line[1] == "include"){
           result = str_extract(clean_line, "(?<=\\{)[^\\}]+")
           process = strsplit(result,"as")[[1]][1]
-          location_to_add = gsub("'","",clean_line[length(clean_line)])
+          idx_of_interest = length(clean_line)
+          for(pp in 1:length(clean_line)){
+            if(clean_line[pp] == "from"){
+              idx_of_interest = pp + 1
+            }
+          }
+          location_to_add = gsub("'","",clean_line[idx_of_interest])
+          location_to_add = gsub("\"","",location_to_add)
           initial_wd = getwd()
           setwd(dirname(main_script))
           if(!grepl(".nf$",location_to_add)){
@@ -285,7 +292,7 @@ fixNullContainerMap <- function(nf_script){
   line_numbers = c()
   for(i in 1:nrow(nf_script_dat)){
     skip_line = FALSE
-    line_split = strsplit(nf_script_dat[i,],"\\s+")[[1]]
+    line_split = strsplit(as.character(nf_script_dat[i,]),"\\s+")[[1]]
     clean_line = line_split
     for(j in 1:length(line_split)){
       clean_line[j] = trimws(line_split[j])
@@ -309,7 +316,7 @@ fixNullContainerMap <- function(nf_script){
           idx_of_interest = 2
           if(is.null(clean_line[idx_of_interest]) || clean_line[idx_of_interest] == 'null'){
             rlog::log_info(paste("found null container reference:",nf_script_dat[i,]))
-            nf_script_dat[i,] = gsub('null','library/ubuntu:20.04',nf_script_dat[i,])
+            nf_script_dat[i,] = gsub('null',paste("'",'library/ubuntu:20.04',"'",sep=""),nf_script_dat[i,])
             rlog::log_info(paste("Changing line to:",nf_script_dat[i,]))
             lines_to_keep = c(lines_to_keep,nf_script_dat[i,])
             line_numbers = c(line_numbers,i)
@@ -483,7 +490,7 @@ loadModuleMetadata <- function(config_files){
                 }
               }
               if(!"]" %in% clean_line){
-                value_collection = paste(clean_line[3:length(clean_line)],collapse="")
+                value_collection = paste(clean_line[3:length(clean_line)])
                 value_collection = gsub("\\{","",value_collection)
                 value_collection = gsub("\\}","",value_collection)
                 if(value_collection != "["){
@@ -525,7 +532,7 @@ loadModuleMetadata <- function(config_files){
               rlog::log_info(paste("IGNORING publishDir configuration for now"))
              # value_collection = c(value_collection,paste(clean_line[3:length(clean_line)],collapse=" "))
             } else{
-              value_collection = paste(clean_line[3:length(clean_line)],collapse="")
+              value_collection = paste(clean_line[3:length(clean_line)],collapse=" ")
               value_collection = gsub("\\{","",value_collection)
               value_collection = gsub("\\}","",value_collection)
               if(value_collection != "["){

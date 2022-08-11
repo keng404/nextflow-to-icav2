@@ -29,6 +29,8 @@ parser$add_argument("-p","--ica-project-name","--ica_project_name",
                     default=NULL, help = "ICA project name")
 parser$add_argument("-i","--ica-project-id","--ica_project_id",
                     default=NULL, help = "ICA project id")
+parser$add_argument("-b","--base-ica-url","--base_ica_url",
+                    default="ica.illumina.com", help = "ICA base URL")
 parser$add_argument("-k","--api-key-file","--api_key_file", required = TRUE,
                     default=NULL, help = "ICA API key file i")
 parser$add_argument("-m","--simple-mode","--simple_mode",action="store_true",
@@ -138,14 +140,14 @@ if(is.null(ica_project_id) && is.null(ica_project_name)){
   stop(paste("Please provide an ICA project ID or ICA project name.\nExciting"))
 } else if(is.null(ica_project_id)){
   ##rlog::log_info(paste("RUNNING: icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
-  system(paste("icav2 projects list -o json ","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
+  system(paste("icav2 projects list -o json ","-s",args$base_ica_url,"-k",paste("'",api_key,"'",sep=""),"> tmp.json"))
   ica_project_lookup = rjson::fromJSON(file="tmp.json")
   if(length(ica_project_lookup$items) < 1){
     stop(paste("Take a look at tmp.json"))
   }
   ica_project_lookup_to_add = ica_project_lookup
   while(!is.null(ica_project_lookup_to_add$nextPageToken)){
-    system(paste("icav2 projects list -o json","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"--page-token",ica_project_lookup_to_add$nextPageToken,"> tmp.json"))
+    system(paste("icav2 projects list -o json","-s",args$base_ica_url,"-k",paste("'",api_key,"'",sep=""),"--page-token",ica_project_lookup_to_add$nextPageToken,"> tmp.json"))
     ica_project_lookup_to_add = rjson::fromJSON(file="tmp.json")
     ica_project_lookup$items = append(ica_project_lookup$items, ica_project_lookup_to_add$items)
   }
@@ -192,7 +194,7 @@ if(is_nf_core && is.null(pipeline_name)){
 ###############################
 get_all_pipelines <- function(api_key){
   all_pipeline_names = c()
-  get_pipelines_command = paste("icav2 pipelines list -o json","-k",paste("'",api_key,"'",sep=""), ">","pipelines.json")
+  get_pipelines_command = paste("icav2 pipelines list -o json","-k",paste("'",api_key,"'",sep=""),"-s",args$base_ica_url, ">","pipelines.json")
   #rlog::log_info(paste("RUNNING CMD:",get_pipelines_command))
   system(get_pipelines_command)
   my_dat = rjson::fromJSON(file="pipelines.json")
@@ -219,6 +221,7 @@ rename_pipeline_name <- function(pipeline_name,api_key){
   new_pipeline_name = find_relevant_pipeline_names(pipeline_name,api_key)
   rlog::log_info(paste("RELEVANT_PIPELINE_NAMES:",new_pipeline_name))
   if(!is.null(new_pipeline_name)){
+    rlog::log_info(paste("RENAMING_PIPELINE_NAME:",pipeline_name,"TO",new_pipeline_name))
     pipeline_name = new_pipeline_name[length(new_pipeline_name)]
   } else{
     return(pipeline_name)
@@ -326,6 +329,12 @@ if(args$simple_mode){
   newXMLNode("label", "project_dir", parent=node_object)
   newXMLNode("description", "directory with additional files/input to run pipeline --- other files in your github project", parent=node_object)
   
+  new_input_node_attributes = c(code = "input_files",format = "UNKNOWN",type = "FILE",required = "true",multiValue = "true")  
+  
+  node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
+  newXMLNode("label", "input_files", parent=node_object)
+  newXMLNode("description", "additional files/input to run pipeline --- other files in your github project", parent=node_object)
+  
   outputPath = gsub(".xml$",".updated.xml",dummy_xml)
   rlog::log_info(paste("Updating parameters XML here:",outputPath))
   #prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -340,18 +349,18 @@ if(args$simple_mode){
     base_path = paste(dirname(main_script),"/",sep="")
     local_path = files_to_stage[fts]
     ica_path = paste("/",pipeline_name,"_project_dir/",gsub(base_path,"",local_path),sep="")
-    upload_cmd = paste("icav2 projectdata upload", local_path, ica_path,'--project-id',ica_project_id,"-k",paste("'",api_key,"'",sep=""),"-s ica.illumina.com")
-    rlog::log_info(paste("RUNNING UPLOAD_CMD:",upload_cmd))
+    upload_cmd = paste("icav2 projectdata upload", local_path, ica_path,'--project-id',ica_project_id,"-k",paste("'",api_key,"'",sep=""),"-s",args$base_ica_url)
+    #rlog::log_info(paste("RUNNING UPLOAD_CMD:",upload_cmd))
     system(upload_cmd)
   }
 }
 # return result to check if we're good
-pipeline_creation_url = paste("https://ica.illumina.com/ica/rest/api/projects/",ica_project_id,"/pipelines:createNextflowPipeline",sep="")
+pipeline_creation_url = paste(paste("https://",args$base_ica_url,"/ica/rest/api/projects/",sep=""),ica_project_id,"/pipelines:createNextflowPipeline",sep="")
 if(workflow_language == "cwl"){
-  pipeline_creation_url = paste("https://ica.illumina.com/ica/rest/api/projects/",ica_project_id,"/pipelines:createCwlPipeline",sep="")
+  pipeline_creation_url = paste(paste("https://",args$base_ica_url,"/ica/rest/api/projects/",sep=""),ica_project_id,"/pipelines:createCwlPipeline",sep="")
 }
 
-system(paste("icav2 analysisstorages list -o json","-s ica.illumina.com","-k",paste("'",api_key,"'",sep=""),"> storages.json"))
+system(paste("icav2 analysisstorages list -o json","-s",args$base_ica_url,"-k",paste("'",api_key,"'",sep=""),"> storages.json"))
 storages_json = rjson::fromJSON(file="storages.json")
 storage_id = NULL
 for(i in 1:length(storages_json$items)){
@@ -462,7 +471,7 @@ if(!args$debug){
       pipeline_creation_request[["code"]] = rename_pipeline_name(pipeline_name,api_key)
       pipeline_creation_request[["description"]] = paste("See",paste("https://github.com/nf-core/",dirname(main_script),sep=""))
       curl_command = create_curl_command(pipeline_creation_url,pipeline_creation_request)
-      rlog::log_info(paste("RUNNING:",curl_command))
+      #rlog::log_info(paste("RUNNING:",curl_command))
       pipeline_creation_response = rjson::fromJSON(json_str=system(curl_command,intern=T))
       num_retries = num_retries + 1
     }

@@ -29,6 +29,8 @@ parser$add_argument("-m","--nf-core-mode","--nf_core_mode",action="store_true",
                     default=FALSE, help = "flag to indicate nf-core pipeline")
 parser$add_argument("-t","--intermediate-copy-template","--intermediate_copy_template", default = NULL,
                     help = "default NF script to copy intermediate and report files from ICA")
+parser$add_argument("-b","--base-ica-url","--base_ica_url",
+                    default="ica.illumina.com", help = "ICA base URL")
 args <- parser$parse_args()
 
 if(!is.null(args$input)){
@@ -104,7 +106,9 @@ for(j in 1:length(names(nf_pipelines_metadata))){
 }
 ### generate parameter XML files for each pipeline in nf-core_pipelines metadata
 rlog::log_info(paste("Generate parameter XML files"))
+dirs_of_interest = list.dirs(staging_directory,recursive = FALSE) 
 schema_jsons = list.files(staging_directory,pattern="nextflow_schema.json",full.names=T,recursive = T)
+additional_repos = dirs_of_interest[!apply(t(dirs_of_interest),2,function(x) sum(grepl(x,schema_jsons)) > 0 )]
 for(k in 1:length(schema_jsons)){
   setwd(run_scripts)
   run_cmd = paste("Rscript nf-core.json_to_params_xml.R --json",schema_jsons[k])
@@ -150,6 +154,47 @@ nextflow_configs = list()
 dsl2_nextflow_scripts = list()
 dsl2_nextflow_configs = list()
 configs_to_ignore_list = list()
+
+
+## running the full conversion loop for  scripts and non-standard-repos
+for(ig in 1:length(additional_repos)){
+  nextflow_script = paste(additional_repos[ig],"main.nf",sep="/")
+  main_config  = paste(additional_repos[ig],"nextflow.config",sep="/")
+  configs_to_ignore = list.files(dirname(nextflow_script),pattern="*config",full.names=T,recursive=T)
+  if(length(configs_to_ignore) > 0 ){
+    configs_ignore_bool = apply(t(configs_to_ignore),2,function(x) basename(x) == "genomes.config")
+    configs_to_ignore = configs_to_ignore[configs_ignore_bool]
+    configs_to_ignore = configs_to_ignore[!is.na(configs_to_ignore)]
+    rlog::log_info(paste(nextflow_script,"Nextflow Configs to Ignore",paste(configs_to_ignore,collapse=",")))
+  } else{
+    configs_to_ignore = NULL
+  }
+  if(file.exists(nextflow_script) && file.exists(main_config)){
+    run_cmd = paste("Rscript nf-core.ica_mod_nf_script.R","--nf-script",nextflow_script,"--config_file",main_config,"--intermediate-copy-template",args$intermediate_copy_template,"--generate-parameters-xml")
+    if(length(configs_to_ignore) > 0){
+      run_cmd = run_cmd
+      for(p in 1:length(configs_to_ignore)){
+        run_cmd = paste(run_cmd,"--configs-to-ignore",configs_to_ignore[p])
+      }
+    }
+    rlog::log_info(paste("Running Non-Canonical script modification",run_cmd))
+    system(run_cmd)
+    
+    xml_files = list.files(dirname(nextflow_script),"*.pipeline.xml",full.names=T)
+    xml_files = xml_files[!grepl("nfcore",xml_files)]
+    xml_files = xml_files[!apply(t(xml_files),2,function(x) strsplit(basename(x),"\\.")[[1]][2] == "nf-core")]
+    pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
+    run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",nextflow_script,"--workflow-language nextflow"))
+    run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
+    run_cmd  = paste(run_cmd,"--simple-mode")
+    rlog::log_info(paste("Running Non-Canonical pipeline creation",run_cmd))
+    system(run_cmd)
+  } else{
+    rlog::log_warn(paste("SKIPPING CONVERSION for",dirname(nextflow_script)))
+  }
+
+}
+
 if(length(schema_jsons) >0 ){
   for(k in 1:length(schema_jsons)){
    rlog::log_info(paste("LOOKING IN DIRECTORY:",dirname(schema_jsons[k])))
@@ -265,7 +310,7 @@ if(args$create_pipeline_in_ica){
         pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
         run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",nextflow_scripts[[scripts_to_create[l]]]),"--workflow-language nextflow")
         run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
-        run_cmd  = paste(run_cmd,"--simple-mode")
+        run_cmd  = paste(run_cmd,"--simple-mode","--base-ica-url",args$base_ica_url)
         rlog::log_info(paste("Running",run_cmd))
         system(run_cmd)
         } else{
@@ -279,7 +324,7 @@ if(args$create_pipeline_in_ica){
           pipeline_name = paste(args$pipeline_name_prefix,strsplit(basename(xml_files[1]),"\\.")[[1]][1],sep="")
           run_cmd  = paste("Rscript nf-core.create_ica_pipeline.R --nextflow-script",gsub(".nf$",".ica.dev.nf",dsl2_nextflow_scripts[[scripts_to_create[l]]]),"--workflow-language nextflow")
           run_cmd  = paste(run_cmd,paste("--parameters-xml",xml_files[1],"--nf-core-mode --ica-project-name",ica_project_name,"--pipeline-name", pipeline_name,"--api-key-file", api_key_file))
-          run_cmd  = paste(run_cmd,"--simple-mode")
+          run_cmd  = paste(run_cmd,"--simple-mode","--base-ica-url",args$base_ica_url)
           rlog::log_info(paste("Running DSL2-enabled pipeline creation",run_cmd))
           system(run_cmd)
         } else{
