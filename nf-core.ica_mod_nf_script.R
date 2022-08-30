@@ -1223,8 +1223,31 @@ getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table)
   pod_annotation = NULL
   pod_value = NA
   search_query = c()
+  if(length(mem) >0){
+    mem = apply(t(mem),2,function(x) strtoi(stringr::str_extract(x,"[[0-9]]+")))
+    if(is.numeric(mem)){
+      mem = 1.25 * mem 
+    }
+  } else{
+    mem = stringr::str_extract(mem,"[[0-9]]+")
+    if(is.numeric(mem)){
+      mem = 1.25 * mem 
+    }
+  }
+  if(length(cpus) >0){
+    cpus = apply(t(cpus),2,function(x) strtoi(x))
+    if(is.numeric(cpus)){
+      cpus = 1.25 * cpus
+    }
+  } else{
+    cpus = strtoi(cpus)
+    if(is.numeric(cpus)){
+      cpus = 1.25 * cpus
+    }
+  }
+  rlog::log_info(paste("PARSED cpu and mem info:",mem,cpus))
   if(length(cpus) > 0 && length(mem) > 0){
-    search_query = ica_instance_table$CPUs >= max(cpus) &&  ica_instance_table$`Mem..GB.` >= max(mem)
+    search_query = ica_instance_table$CPUs >= max(cpus) &  ica_instance_table$`Mem..GB.` >= max(mem)
   } else if(length(cpus) > 0 && length(mem) == 0){
     search_query = ica_instance_table$CPUs >= max(cpus) 
   } else if(length(cpus) == 0 && length(mem) > 0){
@@ -1372,6 +1395,8 @@ get_instance_type_table <- function(url){
   return(data.frame(content_lines))
 }
 ica_instance_table = get_instance_type_table(url=instance_type_table_url)
+ica_instance_table$CPUs = as.numeric(ica_instance_table$CPUs)
+ica_instance_table$`Mem..GB.` = as.numeric(ica_instance_table$`Mem..GB.`)
 # lookup_table format found in getInstancePodAnnotation function in the nf-core.ica_mod_nf_script.R file
 addMemOrCPUdeclarations <- function(pod_annotation,lookup_table){
   pod_annotation_split = strsplit(pod_annotation,"\\s+")[[1]]
@@ -1862,16 +1887,23 @@ valid_nf_file <- function(file_path){
 if(args$dsl2_enabled){
   source('dsl2_compatible_parser.R')
   #main_script = "nf-core/rnaseq/main.nf"
-  scripts_to_check = find_all_nf_scripts(main_script=nf_script)[["scripts_to_look_at"]]
-  additional_files = list.files(paste(dirname(nf_script),"modules",sep="/"),pattern=".nf",full.names = TRUE,recursive = TRUE)
-  additional_files = additional_files[!scripts_to_check %in% additional_files]
-  scripts_to_check = c(scripts_to_check,additional_files)
+  first_pass = find_all_nf_scripts(main_script=nf_script)
+  scripts_to_check = c()
+  scripts_to_ignore = c()
+  scripts_seen = c()
+  if(!is.null(first_pass)){
+    scripts_to_check = find_all_nf_scripts(main_script=nf_script)[["scripts_to_look_at"]]
+    additional_files = list.files(paste(dirname(nf_script),"modules",sep="/"),pattern=".nf",full.names = TRUE,recursive = TRUE)
+    additional_files = additional_files[!scripts_to_check %in% additional_files]
+    scripts_to_check = c(scripts_to_check,additional_files)
+  }
   if(length(scripts_to_check) > 0){
     workflow_script = scripts_to_check
     scripts_to_add = workflow_script
     scripts_to_parse = workflow_script
     while(length(scripts_to_add) > 0){
       scripts_to_add = scripts_to_add[apply(t(scripts_to_add),2,valid_nf_file)]
+      scripts_to_add = scripts_to_add[!scripts_to_add %in% scripts_to_ignore]
       if(length(scripts_to_add) > 0){
         rlog::log_info(paste("LOOKING to parse these files:",paste(scripts_to_add,collapse=", ")))
         scripts_to_parse = c()
@@ -1879,8 +1911,10 @@ if(args$dsl2_enabled){
         second_pass_scripts = c()
         path_exists_check = c()
         for(i in 1:length(scripts_to_add)){
+          scripts_seen = c(scripts_seen,scripts_to_add[i])
           rlog::log_info(paste("Looking through the following script:",paste(scripts_to_add[i],sep=", ")))
           scripts_of_interest_metadata = find_all_nf_scripts(main_script=simplify_path(scripts_to_add[i]))
+          #print(scripts_of_interest_metadata)
           if(!is.null(scripts_of_interest_metadata)){
             print(scripts_of_interest_metadata)
             scripts_of_interest = scripts_of_interest_metadata[["scripts_to_look_at"]]
@@ -1893,12 +1927,25 @@ if(args$dsl2_enabled){
               }
             }
             scripts_to_parse = c(scripts_to_parse,scripts_of_interest[!scripts_of_interest %in% scripts_to_check])
+            scripts_to_parse = scripts_to_parse[!scripts_to_parse %in% scripts_seen]
             scripts_to_check = c(scripts_to_check,scripts_of_interest[!scripts_of_interest %in% scripts_to_check])
+            scripts_to_parse = scripts_to_check[!scripts_to_check %in% scripts_seen]
+          } else{
+            scripts_to_ignore = c(scripts_to_ignore,scripts_to_add[i])
           }
         }
-      }
       #print(scripts_to_parse)
+      scripts_to_parse = scripts_to_parse[!scripts_to_parse %in% scripts_to_ignore]
+      scripts_to_check = scripts_to_check[!scripts_to_check %in% scripts_to_ignore]
+      scripts_to_parse = scripts_to_parse[!scripts_to_parse %in% scripts_seen]
+      scripts_to_check = scripts_to_check[!scripts_to_check %in% scripts_seen]
       scripts_to_add = scripts_to_parse
+      rlog::log_info(paste("SCRIPTS_TO_ADD:",paste(scripts_to_add,collapse=", ")))
+      rlog::log_info(paste("SCRIPTS_TO_IGNORE:",paste(scripts_to_ignore,collapse=", ")))
+      rlog::log_info(paste("SCRIPTS_SEEN:",paste(scripts_seen,collapse=", ")))
+      } else{
+        scripts_to_add = NULL
+      }
     } 
   } else{
     rlog::log_warn(paste("Did not find additional NF scripts to parse in addition to:",main_script))
@@ -2035,7 +2082,10 @@ for(uidx in 1:length(scripts_to_check)){
             for(k in 1:length(current_process_new_lines)){
               if(args$dsl2_enabled){
                 script_of_interest_metadata = find_all_nf_scripts(main_script=scripts_to_check[uidx])
-                renaming_metadata = script_of_interest_metadata[["scripts_rename"]]
+                renaming_metadata = NULL
+                if(!is.null(script_of_interest_metadata)){
+                  renaming_metadata = script_of_interest_metadata[["scripts_rename"]]
+                }
                 if(length(renaming_metadata) > 0){
                   for(ns in 1:length(names(renaming_metadata))){
                     rlog::log_info(paste("UPDATING line:",current_process_new_lines[k],"to"))

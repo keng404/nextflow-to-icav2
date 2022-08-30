@@ -69,6 +69,7 @@ find_all_nf_scripts <- function(main_script){
   ### first pass to see if this is a DSL2 script
   nf_script_dat = read.delim(main_script,quote = "",header=F)
   for(i in 1:nrow(nf_script_dat)){
+    rlog::log_info(paste("ON line: ",i,"in the file",main_script))
     skip_line = FALSE
     line_split = strsplit(as.character(nf_script_dat[i,]),"\\s+")[[1]]
     clean_line = line_split
@@ -125,9 +126,15 @@ find_all_nf_scripts <- function(main_script){
       }
     }
   }
-  scripts_metadata[["scripts_rename"]] = scripts_rename
-  scripts_metadata[["scripts_to_look_at"]] = scripts_to_look_at
-  if(length(scripts_metadata[["scripts_rename"]]) == 0  || length(scripts_metadata[["scripts_to_look_at"]]) == 0){
+  if(length(scripts_rename)>0){
+    scripts_metadata[["scripts_rename"]] = scripts_rename
+  }
+  if(length(scripts_to_look_at) > 0) {
+    scripts_metadata[["scripts_to_look_at"]] = scripts_to_look_at
+  }
+  if(length(scripts_metadata) == 0 | length(names(scripts_metadata)) == 0 ){
+    scripts_metadata = NULL
+  } else  if(length(scripts_metadata[["scripts_rename"]]) == 0  || length(scripts_metadata[["scripts_to_look_at"]]) == 0){
     scripts_metadata = NULL
   }
   return(scripts_metadata)
@@ -692,7 +699,7 @@ addPublishStatement <- function(process_lines,publish_dir_path=NULL){
   return(new_process_lines)
 }
 ############################################
-orginalModuleMapper <- function(module_list){
+originalModuleMapper <- function(module_list){
   og_mapper = list()
   for(i in 1:length(names(module_list))){
     if("original_module_name" %in% names(module_list[[names(module_list)[i]]]) ){
