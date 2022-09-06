@@ -882,6 +882,46 @@ updateProcessDeclaratives <- function(process_lines,declarations){
     return(process_lines)
   }
 }
+findModuleConfigStatements <- function(lines_of_interest,module_name){
+  moduleConfigs = list()
+  module_lines = c()
+  for(i in 1:length(lines_of_interest)){
+    tokens = strsplit(lines_of_interest[i],"\\s+")[[1]]
+    token_found = FALSE
+    if(length(tokens[tokens != ""]) > 0){
+      for(j in 1:length(tokens)){
+        token_of_interest = stringr::str_extract(tokens[j],"task.ext.+")
+        if(!is.na(token_of_interest)){
+          token_found = TRUE
+          token_of_interest = gsub("[{|}]","",token_of_interest)
+          token_of_interest = gsub("[[|]]","",token_of_interest)
+          token_of_interest = trimws(token_of_interest)
+          token_of_interest_split = strsplit(token_of_interest,"\\.")[[1]]
+          new_name = paste("params_def",module_name,token_of_interest_split[3:length(token_of_interest_split)],collapse="_",sep="_")
+          moduleConfigs[[module_name]][[gsub("task","process",token_of_interest)]] = new_name
+          tokens[j] = new_name
+        } 
+      }
+    }
+    if(token_found){
+      rlog::log_info(paste("ADDING revised_LINE:",paste(tokens,collapse=" ")))
+      new_line = paste(tokens,collapse=" ")
+      new_line = gsub("\\$\\{meta.id\\}",paste("${meta.id}",tolower(module_name),collapse=".",sep="."),new_line)
+      module_lines = c(module_lines,new_line)
+    } else{
+      new_line = gsub("\\$\\{meta.id\\}",paste("${meta.id}",tolower(module_name),collapse=".",sep="."),lines_of_interest[i])
+      rlog::log_info(paste("ADDING unrevised_LINE:",new_line))
+      module_lines = c(module_lines,new_line)
+    }
+  }
+  if(length(names(moduleConfigs)) < 1){
+    return(NULL)
+  } else{
+    moduleConfigs[[module_name]][["revised_lines"]] = c()
+    moduleConfigs[[module_name]][["revised_lines"]] = module_lines
+    return(moduleConfigs)
+  }
+}
 #############################
 makeFinalEdits <- function(nf_script,module_metadata,module_location){
   new_lines = c()
@@ -922,6 +962,12 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
     #if(paste(module_lines1,collapse="\n") != paste(module_lines,collapse="\n")){
     updated_module_script = gsub(".nf$",".dev.nf",module_script)
     print(module_lines1)
+    ##################################
+    module_extended_arguments = findModuleConfigStatements(module_lines1,module_of_interest)
+    if(!is.null(module_extended_arguments)){
+      module_lines1 = module_extended_arguments[[module_of_interest]][["revised_lines"]]
+    } 
+    ##################################
     write.table(x=module_lines1,file=updated_module_script,sep="\n",quote=F,row.names=F,col.names=F)
     rlog::log_info(paste("Generated updated module script to:",updated_module_script))
     system(paste("cp",updated_module_script,module_script))
@@ -954,7 +1000,16 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
               if(length(parameter_value) > 1){
                 parameter_value = paste(parameter_value , collapse = " ")
               }
-              lines_to_add = c(lines_to_add,paste("   ",configuration_parameters[k1],"=",parameter_value))
+              if(! configuration_parameters[k1] %in% names(module_extended_arguments[[module_of_interest]])){
+                if(!grepl("\\$\\{meta",parameter_value) & !grepl("\\$\\meta",parameter_value)){
+                  lines_to_add = c(lines_to_add,paste("   ",configuration_parameters[k1],"=",parameter_value))
+                }
+              } else{
+                if(!grepl("\\$\\{meta",parameter_value) & !grepl("\\$\\meta",parameter_value)){
+                  rlog::log_info(paste("Replacing",configuration_parameters[k1],"with",module_extended_arguments[[module_of_interest]][[configuration_parameters[k1]]]))
+                  lines_to_add = c(lines_to_add,paste("   ","def",module_extended_arguments[[module_of_interest]][[configuration_parameters[k1]]],"=",parameter_value))
+                }
+              }
             }
             lines_to_add = c(lines_to_add,"}")
             
@@ -964,7 +1019,12 @@ makeFinalEdits <- function(nf_script,module_metadata,module_location){
               if(length(parameter_value) > 1){
                 parameter_value = paste(parameter_value , collapse = " ")
               }
-              lines_to_add = c(lines_to_add,paste(configuration_parameters[k1],"=",parameter_value))
+              if(!configuration_parameters[k1] %in% names(module_extended_arguments[[module_of_interest]])){
+                lines_to_add = c(lines_to_add,paste(configuration_parameters[k1],"=",parameter_value))
+              } else{
+                rlog::log_info(paste("Replacing",configuration_parameters[k1],"with",module_extended_arguments[[module_of_interest]][[configuration_parameters[k1]]]))
+                lines_to_add = c(lines_to_add,paste("   ","def",module_extended_arguments[[module_of_interest]][[configuration_parameters[k1]]],"=",parameter_value))
+              }
             }
           }
         }
