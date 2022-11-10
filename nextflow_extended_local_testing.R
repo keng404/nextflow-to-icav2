@@ -9,7 +9,7 @@ parser <- ArgumentParser()
 parser$add_argument("-x","--parameters-xml-file","--parameters_xml_file",
                     default=NULL, help = " parameters XML file output",required=TRUE)
 parser$add_argument("-i","--input-file-format","--input_file_format",
-                    default="FASTQ", help = "input file type",required=TRUE)
+                    default="FASTQ", help = "input file type",required=FALSE)
 parser$add_argument("-s", "--nextflow-script","--nextflow_script", default = NULL, required = TRUE,
                     help="input nf-core pipeline script")
 parser$add_argument("-d", "--docker-image","--docker_image", default ="nextflow/nextflow:20.10.0", required = FALSE,
@@ -225,6 +225,9 @@ staged_nextflow_script = paste(new_testing_dir,basename(nextflow_script),sep="/"
 docker_cmd = paste("docker run -it --rm",create_mount_string(staged_nextflow_script),docker_image,"nextflow run",basename(staged_nextflow_script),overrides)
 rlog::log_info(paste("RUNNING CMD:",docker_cmd))
 docker_result = system(docker_cmd,intern = TRUE)
+staged_nextflow_script_log = paste(new_testing_dir,paste(basename(nextflow_script),".log",sep=""),sep="/")
+rlog::log_info(paste("WRITING OUT CONTENTS TO :",staged_nextflow_script_log))
+write.table(paste(docker_result,sep="\n",collapse="\n"),staged_nextflow_script_log)
 #####################
 docker_command_error <- function(cmd_out){
   error_in_output = FALSE

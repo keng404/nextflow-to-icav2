@@ -51,7 +51,7 @@ craftCLIparameters <- function(parameter_list){
     parameter_names[i] = paste(names(parameter_list)[i],parameter_list[[names(parameter_list)[i]]][["default"]],sep=":")
   }
   if(length(parameter_names > 0)){
-    params_cli = paste(apply(t(parameter_names),2,function(elem) paste("--parameter",elem)),collapse = " ")
+    params_cli = paste(apply(t(parameter_names),2,function(elem) paste("--parameters",elem)),collapse = " ")
     return(params_cli)
   } else{
     return("")
@@ -87,7 +87,7 @@ mockCLIcommand <- function(workflow_language=NULL,pipeline_name=NULL,user_refere
     user_reference = "test_run"
   }
   tag_str = paste(tags,user_reference,collapse = " ")
-  full_cli = paste("icav2 projectpipelines ",workflow_language,"create",pipeline_name,"--user-reference",user_reference,input_cli,parameter_cli,tag_str,collapse = " ")
+  full_cli = paste("icav2 projectpipelines start",workflow_language,pipeline_name,"--user-reference",user_reference,input_cli,parameter_cli,tag_str,collapse = " ")
   full_cli = paste(full_cli,"[ OPTIONAL:","--x-api-key","API_KEY","--project-id","PROJECT_ID","]",collapse = " ")
   return(full_cli)
 }

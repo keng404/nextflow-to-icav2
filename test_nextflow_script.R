@@ -17,7 +17,7 @@ nextflow_script = args$nextflow_script
 docker_image = args$docker_image
 #####################
 create_mount_string <- function(script_path){
-  mount_string = paste("-v",paste(script_path,":",script_path,sep=""),"-w",dirname(script_path))
+  mount_string = paste("-v",paste(dirname(script_path),":",dirname(script_path),sep=""),"-w",dirname(script_path))
   return(mount_string)
 }
 ################

@@ -21,10 +21,14 @@ parser$add_argument("-w","--workflow-language","--workflow_language", default="n
                     required=TRUE, help = "workflow language of pipeline. Currently supported workflow languages are cwl and nextflow")
 parser$add_argument("-x","--parameters-xml","--parameters_xml", default=NULL,
                     required=TRUE, help = "parameters XML file")
+parser$add_argument("-o","--parameters-xml-override","--parameters_xml_override", default=FALSE,action="store_true",
+                    required=FALSE, help = "parameters XML file")
 parser$add_argument("-v","--pipeline-name","--pipeline_name",required = TRUE,
                     default=NULL, help = "pipeline name")
 parser$add_argument("-g","--code-project-directory","--code-project_directory",
                     default=NULL, help = "directory with other files of interest")
+parser$add_argument("-f","--nextflow-version","--nextflow_version",
+                    default="20.10.0", help = "nextflow_version")
 parser$add_argument("-p","--ica-project-name","--ica_project_name",
                     default=NULL, help = "ICA project name")
 parser$add_argument("-i","--ica-project-id","--ica_project_id",
@@ -49,6 +53,7 @@ args <- parser$parse_args()
 ## API key file
 api_key_file = args$api_key_file
 api_key = read.delim(api_key_file,quote="",header=F)[,1]
+nextflow_version = args$nextflow_version
 ## main script
 ## xml
 xml_file = args$parameters_xml
@@ -199,8 +204,21 @@ get_all_pipelines <- function(api_key){
   system(get_pipelines_command)
   my_dat = rjson::fromJSON(file="pipelines.json")
   pipelines = my_dat$items
-  for(i in 1:length(pipelines)){
-    all_pipeline_names = c(all_pipeline_names,pipelines[[i]]$code)
+  if(length(pipelines)>0){
+    for(i in 1:length(pipelines)){
+      all_pipeline_names = c(all_pipeline_names,pipelines[[i]]$code)
+    }
+  }
+  my_dat = rjson::fromJSON(file="pipelines.json")
+  while(!is.null(my_dat$nextPageToken)){
+    get_pipelines_command = paste("icav2 pipelines list -o json","-k",paste("'",api_key,"'",sep=""),"-s",args$base_ica_url,"--page-token",my_dat$nextPageToken, ">","pipelines.json")
+    system(get_pipelines_command)
+    pipelines = my_dat$items
+    if(length(pipelines)>0){
+      for(i in 1:length(pipelines)){
+        all_pipeline_names = c(all_pipeline_names,pipelines[[i]]$code)
+      }
+    }
   }
   return(all_pipeline_names)
 }
@@ -220,26 +238,32 @@ find_relevant_pipeline_names <- function(query,api_key){
 rename_pipeline_name <- function(pipeline_name,api_key){
   new_pipeline_name = find_relevant_pipeline_names(pipeline_name,api_key)
   rlog::log_info(paste("RELEVANT_PIPELINE_NAMES:",new_pipeline_name))
-  if(!is.null(new_pipeline_name)){
-    rlog::log_info(paste("RENAMING_PIPELINE_NAME:",pipeline_name,"TO",new_pipeline_name))
-    pipeline_name = new_pipeline_name[length(new_pipeline_name)]
-  } else{
-    return(pipeline_name)
-  }
-  pipeline_name_split = strsplit(pipeline_name,"_")[[1]]
-  if(grepl("^v",pipeline_name_split[length(pipeline_name_split)])){
-    version_number = gsub("v","",pipeline_name_split[length(pipeline_name_split)])
-    if(!is.na(strtoi(version_number)) ) {
-      version_number = strtoi(version_number) + 1
-      pipeline_name_split[length(pipeline_name_split)] = paste("v",version_number,sep="")
+  created_good_name = FALSE
+  while(! created_good_name){
+    new_pipeline_name = find_relevant_pipeline_names(pipeline_name,api_key)
+    if(!is.null(new_pipeline_name)){
+      rlog::log_info(paste("RENAMING_PIPELINE_NAME:",pipeline_name,"TO",new_pipeline_name))
+      pipeline_name = new_pipeline_name[length(new_pipeline_name)]
+    } else if(is.null(new_pipeline_name) & !is.null(pipeline_name)){
+      created_good_name = TRUE
+      return(pipeline_name)
+    }
+    pipeline_name_split = strsplit(pipeline_name,"_")[[1]]
+    if(grepl("^v",pipeline_name_split[length(pipeline_name_split)])){
+      version_number = gsub("v","",pipeline_name_split[length(pipeline_name_split)])
+      if(!is.na(strtoi(version_number)) ) {
+        version_number = strtoi(version_number) + 1
+        pipeline_name_split[length(pipeline_name_split)] = paste("v",version_number,sep="")
+      } else{
+        pipeline_name_split = c(pipeline_name_split,"v1")
+      }
     } else{
       pipeline_name_split = c(pipeline_name_split,"v1")
     }
-  } else{
-    pipeline_name_split = c(pipeline_name_split,"v1")
+    new_name = paste(pipeline_name_split,sep="_",collapse="_")
+    rlog::log_info(paste("TRYING_PIPELINE_NAME:",pipeline_name,"TO",new_name))
+    pipeline_name = new_name
   }
-  new_name = paste(pipeline_name_split,sep="_",collapse="_")
-  rlog::log_info(paste("RENAMING_PIPELINE_NAME:",pipeline_name,"TO",new_name))
   return(new_name)
 }
 ###########################3
@@ -273,6 +297,7 @@ if(!is.na(documentation)){
      description[i,]  = gsub("\"","",description[i,])
      description[i,]  = gsub("#","",description[i,])
      description[i,]  = gsub("`","",description[i,])
+     description[i,]  = gsub("'","",description[i,])
       if(!grepl("\\!\\[",description[i,]) && !grepl("docker",description[i,],ignore.case=T) && (grepl("description",description[i,],ignore.case=T) || grepl("doc",description[i,],ignore.case=T))){
         lines_to_add = c(lines_to_add,description[i,])
       }
@@ -320,28 +345,31 @@ if(args$simple_mode){
   library(XML)
   library(rlog)
   dummy_xml = xml_file
-  doc = xmlTreeParse(dummy_xml,useInternalNodes = TRUE)
-  root = xmlRoot(doc)
-  dataInputsNode = root[["dataInputs"]]
-  new_input_node_attributes = c(code = "project_dir",format = "UNKNOWN",type = "DIRECTORY",required = "true",multiValue = "true")  
-  
-  node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
-  newXMLNode("label", "project_dir", parent=node_object)
-  newXMLNode("description", "directory with additional files/input to run pipeline --- other files in your github project", parent=node_object)
-  
-  new_input_node_attributes = c(code = "input_files",format = "UNKNOWN",type = "FILE",required = "true",multiValue = "true")  
-  
-  node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
-  newXMLNode("label", "input_files", parent=node_object)
-  newXMLNode("description", "additional files/input to run pipeline --- other files in your github project", parent=node_object)
-  
-  outputPath = gsub(".xml$",".updated.xml",dummy_xml)
-  rlog::log_info(paste("Updating parameters XML here:",outputPath))
-  #prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-  prefix.xml <- "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
-  saveXML(doc , file=outputPath,encoding="utf-8")
-  xml_file = outputPath
-  rlog::log_info(paste("Resetting parameters XML to:",outputPath))
+  if(args$parameters_xml_override){
+    rlog::log_info(paste("UPDATING parameters XML file:",dummy_xml))
+    doc = xmlTreeParse(dummy_xml,useInternalNodes = TRUE)
+    root = xmlRoot(doc)
+    dataInputsNode = root[["dataInputs"]]
+    new_input_node_attributes = c(code = "project_dir",format = "UNKNOWN",type = "DIRECTORY",required = "true",multiValue = "true")  
+    
+    node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
+    newXMLNode("label", "project_dir", parent=node_object)
+    newXMLNode("description", "directory with additional files/input to run pipeline --- other files in your github project", parent=node_object)
+    
+    new_input_node_attributes = c(code = "input_files",format = "UNKNOWN",type = "FILE",required = "true",multiValue = "true")  
+    
+    node_object = newXMLNode("dataInput",attrs=new_input_node_attributes,parent = dataInputsNode)
+    newXMLNode("label", "input_files", parent=node_object)
+    newXMLNode("description", "additional files/input to run pipeline --- other files in your github project", parent=node_object)
+    
+    outputPath = gsub(".xml$",".updated.xml",dummy_xml)
+    rlog::log_info(paste("Updating parameters XML here:",outputPath))
+    #prefix='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    prefix.xml <- "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+    saveXML(doc , file=outputPath,encoding="utf-8")
+    xml_file = outputPath
+    rlog::log_info(paste("Resetting parameters XML to:",outputPath))
+  }
   pipeline_creation_request[["parametersXmlFile"]] = xml_file
   #####################################################
   files_to_stage = file_list
@@ -401,12 +429,61 @@ if(is.null(storage_id)){
 #-F 'analysisStorageId=qassss' \
 #-F 'categories=' \
 #-F 'description=adsfassadf'
+#############
+parsePipelineDescription <- function(pipeline_description,api_key){
+  known_versions = c('20.10.0','22.04.3')  
+  final_version_id = NULL
+  final_version = NULL
+  pipeline_language_version_url =paste("https://",args$base_ica_url,"/ica/rest/api/pipelineLanguages/nextflow/versions",sep="")
+  curl_command = paste("curl --verbose -vL -X 'GET'",pipeline_language_version_url)
+  curl_command = paste(curl_command,"-H 'accept: application/vnd.illumina.v3+json'")
+  curl_command = paste(curl_command,"-H 'X-API-Key:",paste(api_key,"'",sep=""))
+  curl_command = paste(curl_command,"-H 'Content-Type: application/vnd.illumina.v3+json'")
+  curl_response = rjson::fromJSON(json_str=system(curl_command,intern=T))
+  nextflow_version_metadata = curl_response$items 
+  nextflow_version_metadata_list = list()
+  if(length(nextflow_version_metadata) > 0){
+    print(nextflow_version_metadata)
+    for(i in 1:length(nextflow_version_metadata)){
+      nextflow_version_metadata_list[[nextflow_version_metadata[[i]]$name]] = nextflow_version_metadata[[i]]$id
+    }
+  } else{
+    stop(paste("Did not get response from ",pipeline_language_version_url))
+  }
+  pipeline_description_split = strsplit(pipeline_description,">=")[[1]]
+  if(length(pipeline_description_split) <  2){
+    return(NULL)
+  } else{
+    tokenize_pipeline_description_split = strsplit(pipeline_description_split[2],"\\s+")[[1]]
+    tokenize_pipeline_description_split = tokenize_pipeline_description_split[tokenize_pipeline_description_split!=""]
+    numeric_version_conversion = strtoi(gsub("\\.","",tokenize_pipeline_description_split))
+    pick_closest_version = apply(t(known_versions),2, function(zed) strtoi(gsub("\\.","",zed)) - numeric_version_conversion )
+    pick_closest_version = pick_closest_version[!is.na(pick_closest_version)]
+    if(length(pick_closest_version) > 0){
+      final_version = known_versions[order(pick_closest_version,decreasing =  TRUE)][1]
+      final_version_id = nextflow_version_metadata_list[[final_version]]
+      rlog::log_info(paste("Using the Nextflow Version",final_version,"associated with the UUID of",final_version_id))
+      return(final_version_id)
+    } else{
+      return(NULL)
+    }
+  }
+}
+#########################
 
 pipeline_creation_request[["analysisStorageId"]] = storage_id
 pipeline_creation_request[["links"]] = "" 
 pipeline_creation_request[["categories"]] = ""
 pipeline_creation_request[["htmlDocumentation"]] = ""
 pipeline_creation_request[["metadataModelFile"]] = "" 
+###################
+final_nextflow_version = parsePipelineDescription(pipeline_creation_request[["description"]],api_key)
+if(!is.null(final_nextflow_version)){
+  rlog::log_info(paste("Requesting nextflow version",final_nextflow_version))
+  pipeline_creation_request[["pipelineLanguageVersionId"]] = final_nextflow_version
+} else{
+  rlog::log_info(paste("No nextflow version specified in documentation, defaulting to nextflow version",args$nextflow_version))
+}
 ###### ATTEMPT ____ MANUALLY CREATE ACTUAL CURL COMMAND TO ICA API rest server to  create pipeline
 create_curl_command <- function(url,request){
   curl_command = paste("curl --verbose -vL -X 'POST'",url)
@@ -454,11 +531,11 @@ create_curl_command <- function(url,request){
 }
 ################################################
 curl_command = create_curl_command(pipeline_creation_url,pipeline_creation_request)
-#rlog::log_info(paste("RUNNING:",curl_command))
+rlog::log_info(paste("RUNNING:",curl_command))
 ###############
 ######################
 num_retries = 0
-max_retries = 1
+max_retries = 4
 if(!args$debug){
   pipeline_creation_response = rjson::fromJSON(json_str=system(curl_command,intern=T))
   #pipeline_creation_response = httr::POST(pipeline_creation_url,config=httr::add_headers("X-API-Key"=api_key), httr::accept("application/vnd.illumina.v3+json"),httr::content_type("multipart/form-data"),body = pipeline_creation_request,encode="multipart", verbose())

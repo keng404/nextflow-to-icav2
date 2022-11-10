@@ -22,7 +22,7 @@ parser$add_argument("-x","--parameters-xml","--parameters_xml",
 args <- parser$parse_args()
 xml_file = args$parameters_xml
 if(!file.exists(xml_file)){
-  stop(paste("Please define a valid path to th4e parameter XML file"))
+  stop(paste("Please define a valid path to the parameter XML file"))
 }
 # parse XML file
 xml_doc =  xmlTreeParse(xml_file,addAttributeNamespaces = TRUE,useInternalNodes = TRUE)
