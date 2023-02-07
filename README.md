@@ -46,7 +46,7 @@ In summary, you will need the following prerequisites, either to run the wrapper
 
 **DSL2 compatibility is now implemented but needs to be tested (i.e. successful pipeline runs)**
 
-# To generate an XML file from nf-core pipeline
+## Step 1: To generate an XML file from nf-core pipeline ( your pipeline has a [nextflow_schema.json](https://nf-co.re/pipeline_schema_builder))
 ```bash
 Rscript nf-core.json_to_params_xml.R --json {PATH_TO_SCHEMA_JSON}
 ```
@@ -56,7 +56,7 @@ Rscript nf-core.json_to_params_xml.R --json {PATH_TO_SCHEMA_JSON}
 nf-core schema build -d {PATH_NF-CORE_DIR}
 ```
 
-# To generate an XML file and edits to Nextflow script, use the following template
+## Step 2: To generate an XML file and edits to Nextflow script, use the following template
 ```bash
 Rscript  nf-core.ica_mod_nf_script.R --nf-script {MAIN_NF_SCRIPT} --nf-config {DEFAULT_NF_CONFIG}  [OPTIONAL: --parameters-xml {PATH} or --generate-parameters-xml] --intermediate-copy-template {PATH_TO_RSCRIPTS}/dummy_template.txt
 ```
@@ -69,7 +69,7 @@ This script will first parse your DEFAULT_NF_CONFIG and try to create a dictiona
 
 A current list of todos for this script is [here](https://github.com/keng404/nextflow-to-icav2/blob/master/todos.nf_editing_for_icav2.md)
 
-# To create a pipeline in ICA, you can use the following helper script ```nf-core.create_ica_pipeline.R```
+## Step 3: To create a pipeline in ICA, you can use the following helper script ```nf-core.create_ica_pipeline.R```
 ```bash
 Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
