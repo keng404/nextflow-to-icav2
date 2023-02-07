@@ -74,8 +74,8 @@ A current list of todos for this script is [here](https://github.com/keng404/nex
 Rscript nf-core.create_ica_pipeline.R --nextflow-script {NF_SCRIPT} --workflow-language nextflow --parameters-xml {PARAMETERS_XML} --nf-core-mode --ica-project-name {NAME} --pipeline-name {NAME} --api-key-file {PATH_TO_API_KEY_FILE}
 ```
 
-## developer mode --- if you plan to develop or modify a pipeline in ICA
-Add the flag ```--simple-mode``` if you have custom groovy libraries or modules files your workflow references. What this script will do when this flag is specified is to upload these files and directories to ICA and to update the parameter XML file to allow you to specify directories under the parameters project_dir and files under input_files. This will ensure that these files and directories will be placed in the ```workflow.launchDir``` when the pipeline is invoked.
+### developer mode --- if you plan to develop or modify a pipeline in ICA
+Add the flag ```--simple-mode``` to the command line above if you have custom groovy libraries or modules files your workflow references. What this script will do when this flag is specified is to upload these files and directories to ICA and to update the parameter XML file to allow you to specify directories under the parameters project_dir and files under input_files. This will ensure that these files and directories will be placed in the ```workflow.launchDir``` when the pipeline is invoked.
 
 # As a convenience, one can also get a templated CLI command to help them run a pipeline in ICA via the following:
 ```bash
