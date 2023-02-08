@@ -274,7 +274,8 @@ getDatas <- function(cmd_str_split,token,data_type,ica_auth_list){
         if(token ==  "input_files:FILE" & file_extension %in% file_extensions_keep){
           dataz = c(dataz,data_table$items[[j]]$id)
         } else{
-          dataz = c(dataz,data_table$items[[j]]$id)
+          rlog::log_info(paste("Not adding the file",file_path,"to the command line"))
+#          dataz = c(dataz,data_table$items[[j]]$id)
         }
       } else{
         if(j == 1){
@@ -483,7 +484,8 @@ generateInputString <- function(cmd_str_split,nf_core_manifest,ica_auth_list,dem
   additional_data_input = list()
   additional_data_input[["files_to_add"]] = c()
   additional_data_input[["input_string"]] = NULL
-  input_string = "'*{1,2}*fastq.gz'"
+  input_string = "'*{1,2}*{fastq,fq}.gz'"
+  input_string = paste("'","\\${workflow.launchDir}/",gsub("'","",input_string),"'",sep="")
   # either a string expression or filename ...
   ### lookup against the nfcore_bundle_info to find template file
   files_to_add = c()
@@ -506,7 +508,8 @@ generateInputString <- function(cmd_str_split,nf_core_manifest,ica_auth_list,dem
       rlog::log_info(paste("TEMPLATE_EXISTS",template_of_interest))
       template_file_id  = uploadFile(local_path = template_of_interest,destination_path = paste("/",paste(pipeline_name,basename(template_of_interest),sep="."),sep=""), ica_auth_list = ica_auth_list)
       files_to_add = c(files_to_add,template_file_id)
-      additional_data_input[["input_string"]] = paste("input",paste(pipeline_name,basename(template_of_interest),sep="."),sep=":")
+      new_input = paste("'","\\${workflow.launchDir}/",paste(pipeline_name,basename(template_of_interest),sep="."),"'",sep="")
+      additional_data_input[["input_string"]] = paste("input_string",new_input,sep=":")
       data_inputs = readTemplateFile(template_path = template_of_interest,ica_auth_list = ica_auth_list)
       if(length(data_inputs) > 0){
         rlog::log_info(paste("ADDING_FILES:",paste(data_inputs,sep=", ",collapse=", ")))
@@ -537,7 +540,7 @@ generateInputString <- function(cmd_str_split,nf_core_manifest,ica_auth_list,dem
       additional_data_input[["final_modified_command"]] = paste("input_files:",gsub("input_files:","",final_modified_command),sep= "",collapse="")
     } else{
       rlog::log_info(paste("Cannot find template file of interest:", template_of_interest))
-      additional_data_input[["input_string"]] = paste("input",input_string,sep = ":")
+      additional_data_input[["input_string"]] = paste("input_string",input_string,sep = ":")
     }
   ### add on on this input string
   } else{
@@ -574,14 +577,14 @@ generateInputString <- function(cmd_str_split,nf_core_manifest,ica_auth_list,dem
         final_modified_command = paste(modified_cmd,sep = " ",collpase = " ")
         additional_data_input[["final_modified_cmd"]] = paste("input_files:",gsub("input_files:","",final_modified_command),sep= "",collapse="")
         additional_data_input[["final_modified_command"]] = paste("input_files:",gsub("input_files:","",final_modified_command),sep= "",collapse="")
-        additional_data_input[["input_string"]] = paste("input",input_string,sep = ":")
+        additional_data_input[["input_string"]] = paste("input_string",input_string,sep = ":")
       } else{
         rlog::log_info(paste("No demo dataset found for :", pipeline_name))
-        additional_data_input[["input_string"]] = paste("input",input_string,sep = ":")
+        additional_data_input[["input_string"]] = paste("input_string",input_string,sep = ":")
       }
     } else{
       rlog::log_info(paste("No template file found for :", pipeline_name))
-      additional_data_input[["input_string"]] = paste("input",input_string,sep = ":")
+      additional_data_input[["input_string"]] = paste("input_string",input_string,sep = ":")
     }
   }
   return(additional_data_input)
@@ -625,11 +628,11 @@ parseCommandString <- function(cmd_str,ica_auth_list,demo_data_manifest){
               cmd_str_split[str_idx + 1] = input_metadata[["input_string"]]
             }
           }
-        } else if(grepl("^input:",cmd_str_split[str_idx + 1]) & cmd_str_split[str_idx + 1] != "input:null"){
-          input_str_split = strsplit(cmd_str_split[str_idx + 1],"input\\:")[[1]]
+        } else if(grepl("^input_string:",cmd_str_split[str_idx + 1]) & cmd_str_split[str_idx + 1] != "input_string:null"){
+          input_str_split = strsplit(cmd_str_split[str_idx + 1],"input_string\\:")[[1]]
           input_str_split = input_str_split[ input_str_split != ""]
           input_str_split[1] = paste("'",input_str_split[1],"'",sep = "")
-          cmd_str_split[str_idx + 1] = paste("input:",input_str_split,sep = "")
+          cmd_str_split[str_idx + 1] = paste("input_string:",input_str_split,sep = "")
         } else if (cmd_str_split[str_idx + 1] == "outdir:null"){
           cmd_str_split[str_idx + 1]  = "outdir:out"
         } else if(cmd_str_split[str_idx + 1] == "email:null"){

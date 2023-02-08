@@ -890,14 +890,32 @@ findModuleConfigStatements <- function(lines_of_interest,module_name){
     token_found = FALSE
     if(length(tokens[tokens != ""]) > 0){
       for(j in 1:length(tokens)){
+        if(tokens[j] == "process"){
+          module_name1 = gsub("{","",tokens[j+1])
+          module_name1 = trimws(module_name1)
+          if(module_name1 != ""){
+            rlog::log_info(paste("REVERTING TO module name",module_name1,"from",module_name))
+            module_name = module_name1
+          } else{
+            rlog::log_info(paste("Could not determine module name","from",module_name))
+          }
+        }
         token_of_interest = stringr::str_extract(tokens[j],"task.ext.+")
+        ext_args_to_avoid = c('container','when')
+        token_of_interest_split = strsplit(token_of_interest,"\\.")[[1]]
+        token_of_interest_split_idx = token_of_interest_split[length(token_of_interest_split)]
+        is_token_of_interest = 0
         if(!is.na(token_of_interest)){
+          found_token_of_interest = apply(t(ext_args_to_avoid),2, function(x) grepl(x,token_of_interest_split_idx))
+          is_token_of_interest = sum(found_token_of_interest)
+        }
+        if(!is.na(token_of_interest) & is_token_of_interest == 0){
           token_found = TRUE
           token_of_interest = gsub("[{|}]","",token_of_interest)
           token_of_interest = gsub("[[|]]","",token_of_interest)
           token_of_interest = trimws(token_of_interest)
           token_of_interest_split = strsplit(token_of_interest,"\\.")[[1]]
-          new_name = paste("params_def",module_name,token_of_interest_split[3:length(token_of_interest_split)],collapse="_",sep="_")
+          new_name = paste("$params.def",module_name,token_of_interest_split[3:length(token_of_interest_split)],collapse="_",sep="_")
           moduleConfigs[[module_name]][[gsub("task","process",token_of_interest)]] = new_name
           tokens[j] = new_name
         } 

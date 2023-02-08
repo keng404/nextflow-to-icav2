@@ -24,7 +24,7 @@ parser$add_argument("-g","--generate-parameters-xml","--generate_parameters_xml"
                     action="store_true",default=FALSE, help = "Generate parameters XML file")
 parser$add_argument("-i","--configs-to-ignore","--configs_to_ignore", default=c(""),nargs="?",
                     action="append",help="config files to ignore")
-parser$add_argument("-u","--instance-type-url","--instance_type_url", default="https://illumina.gitbook.io/ica/project/p-flow/f-pipelines#compute-types",
+parser$add_argument("-u","--instance-type-url","--instance_type_url", default="https://help.ica.illumina.com/project/p-flow/f-pipelines#compute-types",
                     help = "URL that contains ICA instance type table")
 parser$add_argument("-d","--default-instance","--default_instance", default = "himem-small",
                     help = "default instance value")
@@ -32,8 +32,10 @@ parser$add_argument("-a","--modules-config-file","--modules_config_file", defaul
                     help = "configuration file for modules of a pipeline")
 parser$add_argument("-m","--dummy-docker-image","--dummy_docker_image", default = "library/ubuntu:21.04",
                     help = "default Docker image to copy intermediate and report files from ICA")
-parser$add_argument("-t","--intermediate-copy-template","--intermediate_copy_template", default = "copy_workfiles.nf",
+parser$add_argument("-t","--intermediate-copy-template","--intermediate_copy_template", default = "dummy_template.txt",
                     help = "default NF script to copy intermediate and report files from ICA")
+parser$add_argument("-w","--input-files-override","--input_files_override", default = "input_override.non_dsl2_pipelines.txt",
+                    help = "default stub to override input")
 parser$add_argument("-n","--ica-instance-namespace","--ica_instance_namespace", default="scheduler.illumina.com/presetSize",
                     help = "ICA instance type namespace : will allow ICA scheduler to know  what instances to use")
 # get command line options, if help option encountered print help and exit,
@@ -43,6 +45,7 @@ is_simple_config = args$is_simple_config
 nf_script = args$nf_script
 config_file = args$config_file
 config_dat  = read.delim(config_file,quote="",header=F)
+input_override = read.delim(args$input_files_override,header=F,quote="")
 parameters_xml  = args$parameters_xml
 configs_to_ignore = args$configs_to_ignore
 configs_to_ignore = configs_to_ignore[configs_to_ignore!=""]
@@ -773,7 +776,7 @@ options_to_add = get_keys_from_complex_params(complex_param_list = complex_param
 ########################
 #### update nf script with parameter updates 
 updated_nf_file = gsub(".nf$",".ica.nf",nf_script)
-new_nf_lines = c()
+new_nf_lines = c(input_override)
 if(length(all_nf_edits) > 0){
   for(i in 1:nrow(nf_script_dat)){
     if(toString(i) %in% names(all_nf_edits)){
@@ -997,6 +1000,10 @@ if(generate_parameters_xml){
       nested_description_label_node  = newXMLNode("description",paste(names(step_configurations)[i],"parameters"),parent=tool_description_node)
       parameter_names = names(step_configurations[[names(step_configurations)[i]]])
       for(j in 1:length(parameter_names)){
+        ##  input override for params.input
+        if(parameter_names[j] == "input"){
+          parameter_names[j] = "input_string"
+        }
         parameter_metadata = step_configurations[[names(step_configurations[i])]][[parameter_names[j]]]
         nested_parameter_node = newXMLNode("parameter",parent=tool_description_node)
         xmlAttrs(nested_parameter_node) = c(code = names(step_configurations[[names(step_configurations)[i]]])[j],minValues = "1",maxValues="1",classification="USER")
@@ -1247,11 +1254,11 @@ getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table)
   }
   rlog::log_info(paste("PARSED cpu and mem info:",mem,cpus))
   if(length(cpus) > 0 && length(mem) > 0){
-    search_query = ica_instance_table$CPUs >= max(cpus) &  ica_instance_table$`Mem..GB.` >= max(mem)
+    search_query = ica_instance_table$CPUs >= max(cpus) &  ica_instance_table$`Mem (GB)` >= max(mem)
   } else if(length(cpus) > 0 && length(mem) == 0){
     search_query = ica_instance_table$CPUs >= max(cpus) 
   } else if(length(cpus) == 0 && length(mem) > 0){
-    search_query = ica_instance_table$`Mem..GB.` >= max(mem)
+    search_query = ica_instance_table$`Mem (GB)` >= max(mem)
   } else{
     pod_annotation = paste(pod_annotation_prefix,"'himem-small'")
     return(pod_annotation)
@@ -1259,7 +1266,7 @@ getInstancePodAnnotation <- function(cpus,mem,container_name,ica_instance_table)
   if(!is.null(container_name) && grepl("dragen",container_name)){
       pod_annotation = paste(pod_annotation_prefix,"'fpga-medium'")
     } else if(sum(search_query) > 0){
-      pod_value = ica_instance_table[search_query,]$`Compute.Type`[1]
+      pod_value = ica_instance_table[search_query,]$`Compute Type`[1]
       pod_annotation = paste(pod_annotation_prefix,paste("'",pod_value,"'",sep=""))
       return(pod_annotation)
   } else{
@@ -1353,9 +1360,9 @@ malformed_processes <- function(parsed_process_list,script_name){
 ######## grabbing instance table info from the ICA GitBook
 get_instance_type_table <- function(url){
   library(rvest)
-  html = read_html(url)
-  html_div_nodes = html %>% html_elements("div")
-  nodes_that_have_table_data = html %>% html_elements("div") %>% html_attr("data-rnw-int-class")
+  html = read_html(url,encoding = "ISO-8859-1")
+  html_div_nodes = html %>% html_elements("tr")
+  nodes_that_have_table_data = html %>% html_elements("tr") %>% html_attr("data-rnw-int-class")
   
   nodes_to_check = (1:length(html_div_nodes))[nodes_that_have_table_data == "table-row____"]
   nodes_to_check = nodes_to_check[!is.na(nodes_to_check)]
@@ -1377,26 +1384,31 @@ get_instance_type_table <- function(url){
     if(computeTypes || cpuReference){
       #print(html_attrs(html_div_nodes[nodes_to_check[i]]))
       #print(html_div_nodes[nodes_to_check[i]] %>% html_text2())
-      lines_to_keep = c(lines_to_keep,text_of_interest)
+      new_line = strsplit(text_of_interest,"\t|\n")[[1]]
+      new_line = new_line[new_line!=""]
+      #lines_to_keep = c(lines_to_keep,new_line)
+      lines_to_keep = rbind(lines_to_keep,new_line)
     }
   }
   
   header_line = c()
   content_lines = c()
-  for(line in 1:length(lines_to_keep)){
+  for(line in 1:nrow(lines_to_keep)){
     if(line == 1){
-      header_line = strsplit(lines_to_keep[line],"\n")[[1]]
+      ##header_line = strsplit(lines_to_keep[line],"\n")[[1]]
+      header_line = lines_to_keep[line,]
     } else{
-      content_lines = rbind(content_lines,strsplit(lines_to_keep[line],"\n")[[1]])
+      ##content_lines = rbind(content_lines,strsplit(lines_to_keep[line],"\n")[[1]])
+      content_lines = rbind(content_lines,lines_to_keep[line,])
     }
   }
   colnames(content_lines) = header_line
   rownames(content_lines) = NULL
-  return(data.frame(content_lines))
+  return(as.data.frame(content_lines))
 }
 ica_instance_table = get_instance_type_table(url=instance_type_table_url)
 ica_instance_table$CPUs = as.numeric(ica_instance_table$CPUs)
-ica_instance_table$`Mem..GB.` = as.numeric(ica_instance_table$`Mem..GB.`)
+ica_instance_table$`Mem (GB)` = as.numeric(ica_instance_table$`Mem (GB)`)
 # lookup_table format found in getInstancePodAnnotation function in the nf-core.ica_mod_nf_script.R file
 addMemOrCPUdeclarations <- function(pod_annotation,lookup_table){
   pod_annotation_split = strsplit(pod_annotation,"\\s+")[[1]]
@@ -1408,11 +1420,11 @@ addMemOrCPUdeclarations <- function(pod_annotation,lookup_table){
     declarations_to_add = c(declarations_to_add,"\tcpus 2")
     declarations_to_add = c(declarations_to_add,"\tmemory 4GB")
   } else{
-    lookup_query = lookup_table$`Compute.Type` == pod_annotation
+    lookup_query = lookup_table$`Compute Type` == pod_annotation
     if( sum(lookup_query) > 0 ){
       cpu_val = floor(scale_factor * strtoi(lookup_table[lookup_query,]$`CPU`[1]))
       declarations_to_add = c(declarations_to_add,paste("\tcpus",cpu_val))
-      mem_val = floor(scale_factor * strtoi(lookup_table[lookup_query,]$`Mem..GB.`[1]))
+      mem_val = floor(scale_factor * strtoi(lookup_table[lookup_query,]$`Mem (GB)`[1]))
       declarations_to_add = c(declarations_to_add,paste("\tmemory",paste("'",mem_val," GB","'",sep="")))
     } else{
       rlog::log_info(paste("ICA_INSTANCE_TABLE:",lookup_table))
