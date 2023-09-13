@@ -1,3 +1,6 @@
+# important note
+Prior to ICAv 2.8, ICA did not allow you to use your own configuration files currently. Since the 2.8 release, configuration files can now be be utilized, but there are some quirks based on how ICA parses the configuration files to prevent users over-riding [certain parameters](https://help.ica.illumina.com/project/p-flow/f-pipelines/pi-nextflow#nextflow-configuration). A small list of caveats can be found [here](https://github.com/keng404/nextflow-to-icav2-config). Note that the scripts in this repository does not reflect the ability of ICA users to bring in ICA specific configuration files for their pipeline and modules. Please contact [Ken](keng@illumina.com) if you have any code or ideas on implementing this. 
+
 # nextflow-to-icav2
 R-based helper scripts to generate XML files and modifications to NF scripts for ICAv2 compatiblity.
 This is an unofficial developer tool to help them develop Nextflow pipelines that will run successfully on ICA. There are some syntax bugs that may get introduced in your nextflow code. One suggestion is to run the steps as described below and then open up these files in VisualStudio Code with the nextflow plugin installed. You may also need to run smoke tests on your code to identify syntax errors you might not catch upon first glance. 
@@ -14,8 +17,6 @@ Some examples of nextflow pipelines that have been lifted over with this repo ca
 What these scripts do is parse configuration files and the main NF script of a pipeline and update the underlying processes with what's mentioned below.
 Additionally parameters mentioned in these configuration files that are not referenced in the main NF file are brought into the main NF script. 
 
-# important note
-Prior to ICAv 2.8, ICA did not allow you to use your own configuration files currently. Since the 2.8 release, configuration files can now be be utilized, but there are some quirks based on how ICA parses the configuration files to prevent users over-riding [certain parameters](https://help.ica.illumina.com/project/p-flow/f-pipelines/pi-nextflow#nextflow-configuration). A small list of caveats can be found [here](). Note that the scripts in this repository does not reflect the ability of ICA users to bring in ICA specific configuration files for their pipeline and modules. Please contact [Ken](keng@illumina.com) if you have any code or ideas on implementing this. 
 
 # ICA Concepts to better understand ICA liftover of nextflow pipelines
 Nextflow workflows on ICA are orchestrated by kubernetes and require a parameters XML file 
